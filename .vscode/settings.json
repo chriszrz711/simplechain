@@ -1,0 +1,3 @@
+{
+  "go.goroot": "${env:HOME}/.local/share/simplechain/go"
+}
