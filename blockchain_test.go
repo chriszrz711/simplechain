@@ -36,6 +36,32 @@ func TestNewBlockchainCreatesGenesisBlock(t *testing.T) {
 		)
 	}
 }
+func TestAddBlockLinksToPreviousBlock(t *testing.T) {
+	blockchain := NewBlockchain()
+
+	blockchain.AddBlock([]byte("Alice pays Bob 10"))
+
+	if len(blockchain.Blocks) != 2 {
+		t.Fatalf(
+			"expected blockchain to contain 2 blocks, got %d",
+			len(blockchain.Blocks),
+		)
+	}
+
+	genesis := blockchain.Blocks[0]
+	block1 := blockchain.Blocks[1]
+
+	if block1.Height != 1 {
+		t.Fatalf(
+			"expected new block height to be 1, got %d",
+			block1.Height,
+		)
+	}
+
+	if !bytes.Equal(block1.PrevHash, genesis.Hash) {
+		t.Fatal("new block previous hash should equal genesis hash")
+	}
+}
 func TestAddMultipleBlocksLinksCorrectly(t *testing.T) {
 	blockchain := NewBlockchain()
 
@@ -88,5 +114,41 @@ func TestValidateChainDetectsTamperedData(t *testing.T) {
 
 	if blockchain.ValidateChain() {
 		t.Fatal("expected tampered blockchain to fail validation")
+	}
+}
+func TestValidateChainDetectsTamperedGenesisBlock(t *testing.T) {
+	blockchain := NewBlockchain()
+	blockchain.AddBlock([]byte("Alice pays Bob 10"))
+
+	blockchain.Blocks[0].Data = []byte("Tampered Genesis")
+
+	if blockchain.ValidateChain() {
+		t.Fatal("blockchain should reject a tampered genesis block")
+	}
+}
+func TestGenesisBlockHasFixedTimestamp(t *testing.T) {
+	genesis := NewGenesisBlock()
+
+	const expectedTimestamp int64 = 1700000000
+
+	if genesis.Timestamp != expectedTimestamp {
+		t.Fatalf(
+			"expected genesis timestamp %d, got %d",
+			expectedTimestamp,
+			genesis.Timestamp,
+		)
+	}
+}
+func TestNewBlockchainUsesFixedGenesisBlock(t *testing.T) {
+	blockchain := NewBlockchain()
+
+	genesis := blockchain.Blocks[0]
+
+	if genesis.Timestamp != genesisTimestamp {
+		t.Fatalf(
+			"expected blockchain genesis timestamp %d, got %d",
+			genesisTimestamp,
+			genesis.Timestamp,
+		)
 	}
 }
