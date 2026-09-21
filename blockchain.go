@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"testing"
 )
 
 type Blockchain struct {
@@ -29,7 +28,18 @@ func (bc *Blockchain) AddBlock(transactions []Transaction) {
 }
 
 func (bc *Blockchain) ValidateChain() bool {
+	if len(bc.Blocks) == 0 {
+		return false
+	}
 	for i, currentBlock := range bc.Blocks {
+		if currentBlock.Height != uint64(i) {
+			return false
+		}
+
+		if i == 0 && len(currentBlock.PrevHash) != 0 {
+			return false
+		}
+
 		pow := NewProofOfWork(currentBlock)
 
 		if !pow.Validate() {
@@ -46,15 +56,4 @@ func (bc *Blockchain) ValidateChain() bool {
 	}
 
 	return true
-}
-func TestTwoBlockchainsHaveSameGenesisHash(t *testing.T) {
-	blockchain1 := NewBlockchain()
-	blockchain2 := NewBlockchain()
-
-	genesis1 := blockchain1.Blocks[0]
-	genesis2 := blockchain2.Blocks[0]
-
-	if !bytes.Equal(genesis1.Hash, genesis2.Hash) {
-		t.Fatal("two blockchains should have identical genesis hashes")
-	}
 }

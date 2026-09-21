@@ -161,3 +161,117 @@ func TestNewBlockchainUsesFixedGenesisBlock(t *testing.T) {
 		)
 	}
 }
+func TestAddBlockWithMultipleTransactions(t *testing.T) {
+	blockchain := NewBlockchain()
+
+	tx1 := NewTransaction("Alice", "Bob", 10)
+	tx2 := NewTransaction("Bob", "Charlie", 5)
+	tx3 := NewTransaction("Charlie", "Dave", 2)
+
+	blockchain.AddBlock([]Transaction{
+		*tx1,
+		*tx2,
+		*tx3,
+	})
+
+	if len(blockchain.Blocks) != 2 {
+		t.Fatalf(
+			"expected blockchain to contain 2 blocks, got %d",
+			len(blockchain.Blocks),
+		)
+	}
+
+	block := blockchain.Blocks[1]
+
+	if len(block.Transactions) != 3 {
+		t.Fatalf(
+			"expected block to contain 3 transactions, got %d",
+			len(block.Transactions),
+		)
+	}
+
+	if block.Transactions[0].Amount != 10 {
+		t.Fatalf(
+			"expected first transaction amount 10, got %d",
+			block.Transactions[0].Amount,
+		)
+	}
+
+	if block.Transactions[1].Amount != 5 {
+		t.Fatalf(
+			"expected second transaction amount 5, got %d",
+			block.Transactions[1].Amount,
+		)
+	}
+
+	if block.Transactions[2].Amount != 2 {
+		t.Fatalf(
+			"expected third transaction amount 2, got %d",
+			block.Transactions[2].Amount,
+		)
+	}
+}
+func TestTwoBlockchainsHaveSameGenesisHash(t *testing.T) {
+	blockchain1 := NewBlockchain()
+	blockchain2 := NewBlockchain()
+
+	genesis1 := blockchain1.Blocks[0]
+	genesis2 := blockchain2.Blocks[0]
+
+	if !bytes.Equal(genesis1.Hash, genesis2.Hash) {
+		t.Fatal("two blockchains should have identical genesis hashes")
+	}
+}
+func TestValidateChainRejectsIncorrectBlockHeight(t *testing.T) {
+	blockchain := NewBlockchain()
+
+	tx1 := NewTransaction("Alice", "Bob", 10)
+	tx2 := NewTransaction("Bob", "Charlie", 5)
+
+	blockchain.AddBlock([]Transaction{*tx1})
+	blockchain.AddBlock([]Transaction{*tx2})
+
+	block2 := blockchain.Blocks[2]
+
+	// 篡改高度
+	block2.Height = 99
+
+	// 重新挖矿，让这个区块自己的 PoW 再次合法
+	pow := NewProofOfWork(block2)
+	nonce, hash := pow.Run()
+
+	block2.Nonce = nonce
+	block2.Hash = hash
+
+	// 即使 PoW 合法，错误的 Height 仍然应该让整条链无效
+	if blockchain.ValidateChain() {
+		t.Fatal("blockchain should reject incorrect block height")
+	}
+}
+func TestValidateChainRejectsGenesisWithNonEmptyPrevHash(t *testing.T) {
+	blockchain := NewBlockchain()
+
+	genesis := blockchain.Blocks[0]
+
+	// 篡改 Genesis 的 PrevHash
+	genesis.PrevHash = []byte("fake previous hash")
+
+	// 重新挖矿，让 Genesis 自己的 PoW 再次合法
+	pow := NewProofOfWork(genesis)
+	nonce, hash := pow.Run()
+
+	genesis.Nonce = nonce
+	genesis.Hash = hash
+
+	// 即使 PoW 合法，Genesis 也不能有 PrevHash
+	if blockchain.ValidateChain() {
+		t.Fatal("blockchain should reject genesis block with non-empty previous hash")
+	}
+}
+func TestValidateChainRejectsEmptyBlockchain(t *testing.T) {
+	blockchain := &Blockchain{}
+
+	if blockchain.ValidateChain() {
+		t.Fatal("empty blockchain should be invalid")
+	}
+}
