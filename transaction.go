@@ -83,6 +83,15 @@ func (tx *Transaction) SetID() {
 
 	tx.ID = hash[:]
 }
+func (tx *Transaction) ValidateID() bool {
+	originalID := tx.ID
+
+	txCopy := *tx
+	txCopy.SetID()
+
+	return bytes.Equal(originalID, txCopy.ID)
+}
+
 func FindUTXO(transactions []Transaction, owner string) []UTXO {
 	spent := make(map[string]bool)
 

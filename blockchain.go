@@ -40,6 +40,12 @@ func (bc *Blockchain) ValidateChain() bool {
 			return false
 		}
 
+		for _, tx := range currentBlock.Transactions {
+			if !tx.ValidateID() {
+				return false
+			}
+		}
+
 		pow := NewProofOfWork(currentBlock)
 
 		if !pow.Validate() {

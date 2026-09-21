@@ -275,3 +275,35 @@ func TestValidateChainRejectsEmptyBlockchain(t *testing.T) {
 		t.Fatal("empty blockchain should be invalid")
 	}
 }
+
+func TestValidateChainRejectsInvalidTransactionIDAfterRemining(t *testing.T) {
+	blockchain := NewBlockchain()
+	tx := NewTransaction("Alice", "Bob", 10)
+	blockchain.AddBlock([]Transaction{*tx})
+
+	if !blockchain.ValidateChain() {
+		t.Fatal("blockchain should be valid before transaction tampering")
+	}
+
+	block := blockchain.Blocks[1]
+
+	// 故意不调用 SetID()，让交易内容与原 ID 不一致。
+	block.Transactions[0].Amount = 1000
+
+	pow := NewProofOfWork(block)
+	nonce, hash := pow.Run()
+	block.Nonce = nonce
+	block.Hash = hash
+
+	if !pow.Validate() {
+		t.Fatal("remined block should have valid proof of work")
+	}
+
+	if block.Transactions[0].ValidateID() {
+		t.Fatal("tampered transaction should still have an invalid ID after remining")
+	}
+
+	if blockchain.ValidateChain() {
+		t.Fatal("blockchain should reject an invalid transaction ID even after remining")
+	}
+}

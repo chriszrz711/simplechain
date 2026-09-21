@@ -614,3 +614,69 @@ func TestChainedTransactions(t *testing.T) {
 		)
 	}
 }
+func TestTransactionValidateID(t *testing.T) {
+	tx := NewTransaction("Alice", "Bob", 10)
+
+	if !tx.ValidateID() {
+		t.Fatal("new transaction should have a valid ID")
+	}
+
+	// 篡改交易内容，但故意不重新 SetID()
+	tx.Amount = 1000
+
+	if tx.ValidateID() {
+		t.Fatal("tampered transaction should have an invalid ID")
+	}
+}
+
+func TestTransactionValidateIDDetectsInputTampering(t *testing.T) {
+	tx := Transaction{
+		From:   "Alice",
+		To:     "Bob",
+		Amount: 10,
+		Inputs: []TXInput{
+			{TxID: []byte("previous-transaction"), OutIndex: 0, From: "Alice"},
+		},
+		Outputs: []TXOutput{
+			{Value: 10, To: "Bob"},
+		},
+	}
+	tx.SetID()
+
+	if !tx.ValidateID() {
+		t.Fatal("transaction should have a valid ID before input tampering")
+	}
+
+	// 修改 Input，但保留原来的交易 ID。
+	tx.Inputs[0].OutIndex = 1
+
+	if tx.ValidateID() {
+		t.Fatal("transaction should have an invalid ID after input tampering")
+	}
+}
+
+func TestTransactionValidateIDDetectsOutputTampering(t *testing.T) {
+	tx := Transaction{
+		From:   "Alice",
+		To:     "Bob",
+		Amount: 10,
+		Inputs: []TXInput{
+			{TxID: []byte("previous-transaction"), OutIndex: 0, From: "Alice"},
+		},
+		Outputs: []TXOutput{
+			{Value: 10, To: "Bob"},
+		},
+	}
+	tx.SetID()
+
+	if !tx.ValidateID() {
+		t.Fatal("transaction should have a valid ID before output tampering")
+	}
+
+	// 修改 Output，但保留原来的交易 ID。
+	tx.Outputs[0].Value = 1000
+
+	if tx.ValidateID() {
+		t.Fatal("transaction should have an invalid ID after output tampering")
+	}
+}
