@@ -155,3 +155,94 @@ func TestNewBlockAcceptsTransactions(t *testing.T) {
 		)
 	}
 }
+func TestNewBlockAcceptsMultipleTransactions(t *testing.T) {
+	tx1 := NewTransaction("Alice", "Bob", 10)
+	tx2 := NewTransaction("Bob", "Charlie", 5)
+	tx3 := NewTransaction("Charlie", "Dave", 2)
+
+	block := NewBlock(
+		1,
+		[]Transaction{
+			*tx1,
+			*tx2,
+			*tx3,
+		},
+		[]byte("previous hash"),
+	)
+
+	if len(block.Transactions) != 3 {
+		t.Fatalf(
+			"expected 3 transactions, got %d",
+			len(block.Transactions),
+		)
+	}
+
+	if block.Transactions[1].Amount != 5 {
+		t.Fatalf(
+			"expected second transaction amount 5, got %d",
+			block.Transactions[1].Amount,
+		)
+	}
+}
+func TestProofOfWorkFailsWhenOneOfMultipleTransactionsIsTampered(t *testing.T) {
+	tx1 := NewTransaction("Alice", "Bob", 10)
+	tx2 := NewTransaction("Bob", "Charlie", 5)
+	tx3 := NewTransaction("Charlie", "Dave", 2)
+
+	block := NewBlock(
+		1,
+		[]Transaction{
+			*tx1,
+			*tx2,
+			*tx3,
+		},
+		[]byte("previous hash"),
+	)
+
+	// 挖好的区块一开始应该合法
+	if !NewProofOfWork(block).Validate() {
+		t.Fatal("expected proof of work to be valid before tampering")
+	}
+
+	// 只篡改第二笔交易
+	block.Transactions[1].Amount = 500
+	block.Transactions[1].SetID()
+
+	// 整个区块的 PoW 都应该失效
+	if NewProofOfWork(block).Validate() {
+		t.Fatal("expected proof of work to be invalid after tampering with one transaction")
+	}
+}
+func TestTransactionOrderAffectsBlockHash(t *testing.T) {
+	tx1 := NewTransaction("Alice", "Bob", 10)
+	tx2 := NewTransaction("Bob", "Charlie", 5)
+
+	block1 := &Block{
+		Height:    1,
+		Timestamp: 1234567890,
+		Transactions: []Transaction{
+			*tx1,
+			*tx2,
+		},
+		PrevHash: []byte("previous hash"),
+		Nonce:    100,
+	}
+
+	block2 := &Block{
+		Height:    1,
+		Timestamp: 1234567890,
+		Transactions: []Transaction{
+			*tx2,
+			*tx1,
+		},
+		PrevHash: []byte("previous hash"),
+		Nonce:    100,
+	}
+
+	hash1 := block1.calculateHash()
+	hash2 := block2.calculateHash()
+
+	if bytes.Equal(hash1, hash2) {
+		t.Fatal("expected different transaction order to produce different block hashes")
+	}
+}
