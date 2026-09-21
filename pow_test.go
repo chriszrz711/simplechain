@@ -6,9 +6,10 @@ import (
 )
 
 func TestNewBlockProducesValidProofOfWork(t *testing.T) {
+	tx := NewTransaction("Alice", "Bob", 10)
 	block := NewBlock(
 		1,
-		[]byte("Alice pays Bob 10"),
+		[]Transaction{*tx},
 		[]byte("previous hash"),
 	)
 
@@ -25,9 +26,10 @@ func TestNewBlockProducesValidProofOfWork(t *testing.T) {
 	}
 }
 func TestProofOfWorkValidateReturnsTrueForMinedBlock(t *testing.T) {
+	tx := NewTransaction("Alice", "Bob", 10)
 	block := NewBlock(
 		1,
-		[]byte("Alice pays Bob 10"),
+		[]Transaction{*tx},
 		[]byte("previous hash"),
 	)
 
@@ -38,9 +40,10 @@ func TestProofOfWorkValidateReturnsTrueForMinedBlock(t *testing.T) {
 	}
 }
 func TestProofOfWorkValidateDetectsTamperedHash(t *testing.T) {
+	tx := NewTransaction("Alice", "Bob", 10)
 	block := NewBlock(
 		1,
-		[]byte("Alice pays Bob 10"),
+		[]Transaction{*tx},
 		[]byte("previous hash"),
 	)
 
@@ -54,7 +57,8 @@ func TestProofOfWorkValidateDetectsTamperedHash(t *testing.T) {
 }
 func TestValidateChainRejectsInvalidProofOfWork(t *testing.T) {
 	blockchain := NewBlockchain()
-	blockchain.AddBlock([]byte("Alice pays Bob 10"))
+	tx := NewTransaction("Alice", "Bob", 10)
+	blockchain.AddBlock([]Transaction{*tx})
 
 	block := blockchain.Blocks[1]
 
@@ -71,5 +75,35 @@ func TestValidateChainRejectsInvalidProofOfWork(t *testing.T) {
 
 	if blockchain.ValidateChain() {
 		t.Fatal("blockchain should reject a block with invalid proof of work")
+	}
+}
+func TestProofOfWorkFailsAfterTransactionTampering(t *testing.T) {
+	tx := NewTransaction("Alice", "Bob", 10)
+
+	block := &Block{
+		Height: 1,
+		Transactions: []Transaction{
+			*tx,
+		},
+		PrevHash: []byte("previous hash"),
+	}
+
+	pow := NewProofOfWork(block)
+
+	nonce, hash := pow.Run()
+
+	block.Nonce = nonce
+	block.Hash = hash
+
+	if !pow.Validate() {
+		t.Fatal("expected proof of work to be valid before tampering")
+	}
+
+	// 篡改交易
+	block.Transactions[0].Amount = 1000
+	block.Transactions[0].SetID()
+
+	if pow.Validate() {
+		t.Fatal("expected proof of work to be invalid after transaction tampering")
 	}
 }

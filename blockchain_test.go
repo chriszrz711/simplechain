@@ -28,18 +28,18 @@ func TestNewBlockchainCreatesGenesisBlock(t *testing.T) {
 		t.Fatal("expected genesis previous hash to be empty")
 	}
 
-	if !bytes.Equal(genesis.Data, []byte("Genesis Block")) {
+	if len(genesis.Transactions) != 0 {
 		t.Fatalf(
-			"expected genesis data to be %q, got %q",
-			"Genesis Block",
-			genesis.Data,
+			"expected genesis transactions to be empty, got %d",
+			len(genesis.Transactions),
 		)
 	}
 }
 func TestAddBlockLinksToPreviousBlock(t *testing.T) {
 	blockchain := NewBlockchain()
 
-	blockchain.AddBlock([]byte("Alice pays Bob 10"))
+	tx := NewTransaction("Alice", "Bob", 10)
+	blockchain.AddBlock([]Transaction{*tx})
 
 	if len(blockchain.Blocks) != 2 {
 		t.Fatalf(
@@ -65,8 +65,10 @@ func TestAddBlockLinksToPreviousBlock(t *testing.T) {
 func TestAddMultipleBlocksLinksCorrectly(t *testing.T) {
 	blockchain := NewBlockchain()
 
-	blockchain.AddBlock([]byte("Alice pays Bob 10"))
-	blockchain.AddBlock([]byte("Bob pays Charlie 5"))
+	tx1 := NewTransaction("Alice", "Bob", 10)
+	tx2 := NewTransaction("Bob", "Charlie", 5)
+	blockchain.AddBlock([]Transaction{*tx1})
+	blockchain.AddBlock([]Transaction{*tx2})
 
 	if len(blockchain.Blocks) != 3 {
 		t.Fatalf(
@@ -97,20 +99,25 @@ func TestAddMultipleBlocksLinksCorrectly(t *testing.T) {
 func TestValidateChainReturnsTrueForValidChain(t *testing.T) {
 	blockchain := NewBlockchain()
 
-	blockchain.AddBlock([]byte("Alice pays Bob 10"))
-	blockchain.AddBlock([]byte("Bob pays Charlie 5"))
+	tx1 := NewTransaction("Alice", "Bob", 10)
+	tx2 := NewTransaction("Bob", "Charlie", 5)
+	blockchain.AddBlock([]Transaction{*tx1})
+	blockchain.AddBlock([]Transaction{*tx2})
 
 	if !blockchain.ValidateChain() {
 		t.Fatal("expected valid blockchain to pass validation")
 	}
 }
-func TestValidateChainDetectsTamperedData(t *testing.T) {
+func TestValidateChainDetectsTamperedTransactions(t *testing.T) {
 	blockchain := NewBlockchain()
 
-	blockchain.AddBlock([]byte("Alice pays Bob 10"))
-	blockchain.AddBlock([]byte("Bob pays Charlie 5"))
+	tx1 := NewTransaction("Alice", "Bob", 10)
+	tx2 := NewTransaction("Bob", "Charlie", 5)
+	blockchain.AddBlock([]Transaction{*tx1})
+	blockchain.AddBlock([]Transaction{*tx2})
 
-	blockchain.Blocks[1].Data = []byte("Alice pays Bob 10000")
+	blockchain.Blocks[1].Transactions[0].Amount = 10000
+	blockchain.Blocks[1].Transactions[0].SetID()
 
 	if blockchain.ValidateChain() {
 		t.Fatal("expected tampered blockchain to fail validation")
@@ -118,9 +125,11 @@ func TestValidateChainDetectsTamperedData(t *testing.T) {
 }
 func TestValidateChainDetectsTamperedGenesisBlock(t *testing.T) {
 	blockchain := NewBlockchain()
-	blockchain.AddBlock([]byte("Alice pays Bob 10"))
+	tx := NewTransaction("Alice", "Bob", 10)
+	blockchain.AddBlock([]Transaction{*tx})
 
-	blockchain.Blocks[0].Data = []byte("Tampered Genesis")
+	tamperedTx := NewTransaction("Alice", "Bob", 10000)
+	blockchain.Blocks[0].Transactions = []Transaction{*tamperedTx}
 
 	if blockchain.ValidateChain() {
 		t.Fatal("blockchain should reject a tampered genesis block")

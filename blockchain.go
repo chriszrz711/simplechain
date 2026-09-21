@@ -16,12 +16,12 @@ func NewBlockchain() *Blockchain {
 		Blocks: []*Block{genesis},
 	}
 }
-func (bc *Blockchain) AddBlock(data []byte) {
+func (bc *Blockchain) AddBlock(transactions []Transaction) {
 	lastBlock := bc.Blocks[len(bc.Blocks)-1]
 
 	newBlock := NewBlock(
 		lastBlock.Height+1,
-		data,
+		transactions,
 		lastBlock.Hash,
 	)
 
