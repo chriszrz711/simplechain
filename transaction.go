@@ -19,9 +19,11 @@ type TXOutput struct {
 	To    string
 }
 type TXInput struct {
-	TxID     []byte
-	OutIndex int
-	From     string
+	TxID      []byte
+	OutIndex  int
+	From      string
+	Signature []byte
+	PublicKey []byte
 }
 type UTXO struct {
 	TxID     []byte
@@ -53,7 +55,41 @@ func NewTransaction(from string, to string, amount int) *Transaction {
 
 	return tx
 }
-func (tx *Transaction) SetID() {
+func (out *TXOutput) CanBeUnlockedWith(publicKey []byte) bool {
+	return out.To == PublicKeyToAddress(publicKey)
+}
+
+func (tx *Transaction) VerifyInputs(transactions []Transaction) bool {
+	for _, input := range tx.Inputs {
+		found := false
+
+		for _, previousTx := range transactions {
+			if !bytes.Equal(input.TxID, previousTx.ID) {
+				continue
+			}
+
+			if input.OutIndex < 0 || input.OutIndex >= len(previousTx.Outputs) {
+				return false
+			}
+
+			previousOutput := previousTx.Outputs[input.OutIndex]
+
+			if !previousOutput.CanBeUnlockedWith(input.PublicKey) {
+				return false
+			}
+
+			found = true
+			break
+		}
+
+		if !found {
+			return false
+		}
+	}
+
+	return true
+}
+func (tx *Transaction) SigningData() []byte {
 	var data bytes.Buffer
 
 	fmt.Fprintf(&data, "%s|%s|%d|", tx.From, tx.To, tx.Amount)
@@ -79,10 +115,28 @@ func (tx *Transaction) SetID() {
 		)
 	}
 
-	hash := sha256.Sum256(data.Bytes())
+	return data.Bytes()
+}
+
+func (tx *Transaction) SetID() {
+	hash := sha256.Sum256(tx.SigningData())
 
 	tx.ID = hash[:]
 }
+func (tx *Transaction) Sign(wallet *Wallet) error {
+	signature, err := wallet.Sign(tx.SigningData())
+	if err != nil {
+		return err
+	}
+
+	for i := range tx.Inputs {
+		tx.Inputs[i].Signature = signature
+		tx.Inputs[i].PublicKey = wallet.PublicKey
+	}
+
+	return nil
+}
+
 func (tx *Transaction) ValidateID() bool {
 	originalID := tx.ID
 
@@ -208,4 +262,41 @@ func NewUTXOTransaction(
 	tx.SetID()
 
 	return tx, nil
+}
+func (tx *Transaction) VerifySignatures() bool {
+	data := tx.SigningData()
+
+	for _, input := range tx.Inputs {
+		if !VerifySignature(
+			input.PublicKey,
+			data,
+			input.Signature,
+		) {
+			return false
+		}
+	}
+
+	return true
+}
+func (tx *Transaction) IsCoinbase() bool {
+	return len(tx.Inputs) == 0
+}
+func (tx *Transaction) Validate(previousTransactions []Transaction) bool {
+	if !tx.ValidateID() {
+		return false
+	}
+
+	if tx.IsCoinbase() {
+		return true
+	}
+
+	if !tx.VerifySignatures() {
+		return false
+	}
+
+	if !tx.VerifyInputs(previousTransactions) {
+		return false
+	}
+
+	return true
 }

@@ -680,3 +680,409 @@ func TestTransactionValidateIDDetectsOutputTampering(t *testing.T) {
 		t.Fatal("transaction should have an invalid ID after output tampering")
 	}
 }
+func TestTXInputCanCarrySignatureAndPublicKey(t *testing.T) {
+	wallet := NewWallet()
+
+	data := []byte("test transaction")
+
+	signature, err := wallet.Sign(data)
+	if err != nil {
+		t.Fatalf("failed to sign data: %v", err)
+	}
+
+	input := TXInput{
+		TxID:     []byte("previous-transaction"),
+		OutIndex: 0,
+		From:     "Alice",
+
+		Signature: signature,
+		PublicKey: wallet.PublicKey,
+	}
+
+	if len(input.Signature) == 0 {
+		t.Fatal("expected input to contain a signature")
+	}
+
+	if len(input.PublicKey) == 0 {
+		t.Fatal("expected input to contain a public key")
+	}
+
+	if !VerifySignature(
+		input.PublicKey,
+		data,
+		input.Signature,
+	) {
+		t.Fatal("expected input signature to be valid")
+	}
+}
+func TestTransactionSigningDataIsStable(t *testing.T) {
+	tx := Transaction{
+		From:   "Alice",
+		To:     "Bob",
+		Amount: 10,
+		Inputs: []TXInput{
+			{
+				TxID:     []byte("previous-transaction"),
+				OutIndex: 0,
+				From:     "Alice",
+			},
+		},
+		Outputs: []TXOutput{
+			{
+				Value: 10,
+				To:    "Bob",
+			},
+		},
+	}
+
+	data1 := tx.SigningData()
+	data2 := tx.SigningData()
+
+	if !bytes.Equal(data1, data2) {
+		t.Fatal("expected signing data to be deterministic")
+	}
+
+	if len(data1) == 0 {
+		t.Fatal("expected signing data to be non-empty")
+	}
+}
+func TestTransactionCanBeSigned(t *testing.T) {
+	wallet := NewWallet()
+
+	tx := Transaction{
+		From:   "Alice",
+		To:     "Bob",
+		Amount: 10,
+		Inputs: []TXInput{
+			{
+				TxID:     []byte("previous-transaction"),
+				OutIndex: 0,
+				From:     "Alice",
+			},
+		},
+		Outputs: []TXOutput{
+			{
+				Value: 10,
+				To:    "Bob",
+			},
+		},
+	}
+
+	tx.SetID()
+
+	err := tx.Sign(wallet)
+	if err != nil {
+		t.Fatalf("failed to sign transaction: %v", err)
+	}
+
+	if len(tx.Inputs[0].Signature) == 0 {
+		t.Fatal("expected transaction input to contain signature")
+	}
+
+	if len(tx.Inputs[0].PublicKey) == 0 {
+		t.Fatal("expected transaction input to contain public key")
+	}
+
+	if !VerifySignature(
+		tx.Inputs[0].PublicKey,
+		tx.SigningData(),
+		tx.Inputs[0].Signature,
+	) {
+		t.Fatal("expected transaction signature to be valid")
+	}
+}
+func TestTransactionVerifySignatures(t *testing.T) {
+	wallet := NewWallet()
+
+	tx := Transaction{
+		From:   "Alice",
+		To:     "Bob",
+		Amount: 10,
+		Inputs: []TXInput{
+			{
+				TxID:     []byte("previous-transaction"),
+				OutIndex: 0,
+				From:     "Alice",
+			},
+		},
+		Outputs: []TXOutput{
+			{
+				Value: 10,
+				To:    "Bob",
+			},
+		},
+	}
+
+	tx.SetID()
+
+	if err := tx.Sign(wallet); err != nil {
+		t.Fatalf("failed to sign transaction: %v", err)
+	}
+
+	// 正常签名应该验证成功
+	if !tx.VerifySignatures() {
+		t.Fatal("expected transaction signatures to be valid")
+	}
+
+	// 签名之后篡改交易内容
+	tx.Outputs[0].Value = 1000
+
+	// 原签名应该立即失效
+	if tx.VerifySignatures() {
+		t.Fatal("expected transaction signature to be invalid after tampering")
+	}
+}
+func TestTXOutputCanBeUnlockedByCorrectPublicKey(t *testing.T) {
+	aliceWallet := NewWallet()
+	bobWallet := NewWallet()
+
+	output := TXOutput{
+		Value: 50,
+		To:    aliceWallet.Address(),
+	}
+
+	if !output.CanBeUnlockedWith(aliceWallet.PublicKey) {
+		t.Fatal("Alice public key should unlock Alice output")
+	}
+
+	if output.CanBeUnlockedWith(bobWallet.PublicKey) {
+		t.Fatal("Bob public key should not unlock Alice output")
+	}
+}
+func TestTransactionRejectsInputOwnedByDifferentWallet(t *testing.T) {
+	aliceWallet := NewWallet()
+	hackerWallet := NewWallet()
+
+	// 以前的一笔交易：50 属于 Alice
+	funding := Transaction{
+		Outputs: []TXOutput{
+			{
+				Value: 50,
+				To:    aliceWallet.Address(),
+			},
+		},
+	}
+	funding.SetID()
+
+	// Hacker 尝试花 Alice 的 funding:0
+	theft := Transaction{
+		From:   "Hacker",
+		To:     hackerWallet.Address(),
+		Amount: 50,
+		Inputs: []TXInput{
+			{
+				TxID:     funding.ID,
+				OutIndex: 0,
+				From:     "Hacker",
+			},
+		},
+		Outputs: []TXOutput{
+			{
+				Value: 50,
+				To:    hackerWallet.Address(),
+			},
+		},
+	}
+
+	theft.SetID()
+
+	if err := theft.Sign(hackerWallet); err != nil {
+		t.Fatalf("failed to sign theft transaction: %v", err)
+	}
+
+	// Hacker 的签名本身是真的
+	if !theft.VerifySignatures() {
+		t.Fatal("expected hacker signature itself to be cryptographically valid")
+	}
+
+	// 但 Hacker 没有权利花 Alice 的 Output
+	if theft.VerifyInputs([]Transaction{funding}) {
+		t.Fatal("transaction should not be allowed to spend an output owned by Alice")
+	}
+}
+func TestTransactionAcceptsInputOwnedByCorrectWallet(t *testing.T) {
+	aliceWallet := NewWallet()
+	bobWallet := NewWallet()
+
+	// 以前的一笔交易：50 属于 Alice
+	funding := Transaction{
+		Outputs: []TXOutput{
+			{
+				Value: 50,
+				To:    aliceWallet.Address(),
+			},
+		},
+	}
+	funding.SetID()
+
+	// Alice 花自己的 funding:0，给 Bob 10
+	spend := Transaction{
+		From:   aliceWallet.Address(),
+		To:     bobWallet.Address(),
+		Amount: 10,
+		Inputs: []TXInput{
+			{
+				TxID:     funding.ID,
+				OutIndex: 0,
+				From:     aliceWallet.Address(),
+			},
+		},
+		Outputs: []TXOutput{
+			{
+				Value: 10,
+				To:    bobWallet.Address(),
+			},
+			{
+				Value: 40,
+				To:    aliceWallet.Address(),
+			},
+		},
+	}
+
+	spend.SetID()
+
+	if err := spend.Sign(aliceWallet); err != nil {
+		t.Fatalf("failed to sign transaction: %v", err)
+	}
+
+	if !spend.VerifySignatures() {
+		t.Fatal("expected Alice signature to be valid")
+	}
+
+	if !spend.VerifyInputs([]Transaction{funding}) {
+		t.Fatal("Alice should be allowed to spend her own output")
+	}
+}
+func TestTransactionValidate(t *testing.T) {
+	aliceWallet := NewWallet()
+	bobWallet := NewWallet()
+
+	// 50 属于 Alice
+	funding := Transaction{
+		Outputs: []TXOutput{
+			{
+				Value: 50,
+				To:    aliceWallet.Address(),
+			},
+		},
+	}
+	funding.SetID()
+
+	// Alice 花 10 给 Bob，40 找零
+	spend := Transaction{
+		From:   aliceWallet.Address(),
+		To:     bobWallet.Address(),
+		Amount: 10,
+		Inputs: []TXInput{
+			{
+				TxID:     funding.ID,
+				OutIndex: 0,
+				From:     aliceWallet.Address(),
+			},
+		},
+		Outputs: []TXOutput{
+			{
+				Value: 10,
+				To:    bobWallet.Address(),
+			},
+			{
+				Value: 40,
+				To:    aliceWallet.Address(),
+			},
+		},
+	}
+
+	spend.SetID()
+
+	if err := spend.Sign(aliceWallet); err != nil {
+		t.Fatalf("failed to sign transaction: %v", err)
+	}
+
+	if !spend.Validate([]Transaction{funding}) {
+		t.Fatal("expected valid transaction to pass validation")
+	}
+}
+func TestTransactionCanIdentifyCoinbase(t *testing.T) {
+	aliceWallet := NewWallet()
+
+	coinbase := Transaction{
+		Outputs: []TXOutput{
+			{
+				Value: 50,
+				To:    aliceWallet.Address(),
+			},
+		},
+	}
+
+	if !coinbase.IsCoinbase() {
+		t.Fatal("expected transaction with no inputs to be coinbase")
+	}
+
+	normal := Transaction{
+		Inputs: []TXInput{
+			{
+				TxID:     []byte("previous transaction"),
+				OutIndex: 0,
+			},
+		},
+	}
+
+	if normal.IsCoinbase() {
+		t.Fatal("expected transaction with inputs not to be coinbase")
+	}
+}
+func TestValidateChainRejectsTransactionSpendingAnotherWalletOutput(t *testing.T) {
+	aliceWallet := NewWallet()
+	hackerWallet := NewWallet()
+
+	blockchain := NewBlockchain()
+
+	// Block 1:
+	// 创建 50 给 Alice
+	funding := Transaction{
+		Outputs: []TXOutput{
+			{
+				Value: 50,
+				To:    aliceWallet.Address(),
+			},
+		},
+	}
+	funding.SetID()
+
+	blockchain.AddBlock([]Transaction{funding})
+
+	// Block 2:
+	// Hacker 试图花 Alice 的 funding:0
+	theft := Transaction{
+		From:   hackerWallet.Address(),
+		To:     hackerWallet.Address(),
+		Amount: 50,
+		Inputs: []TXInput{
+			{
+				TxID:     funding.ID,
+				OutIndex: 0,
+				From:     hackerWallet.Address(),
+			},
+		},
+		Outputs: []TXOutput{
+			{
+				Value: 50,
+				To:    hackerWallet.Address(),
+			},
+		},
+	}
+
+	theft.SetID()
+
+	if err := theft.Sign(hackerWallet); err != nil {
+		t.Fatalf("failed to sign theft transaction: %v", err)
+	}
+
+	blockchain.AddBlock([]Transaction{theft})
+
+	// 所有 Block 的 PoW 都是真的，
+	// 但 theft 不应该通过交易所有权验证。
+	if blockchain.ValidateChain() {
+		t.Fatal("blockchain should reject transaction spending another wallet's output")
+	}
+}

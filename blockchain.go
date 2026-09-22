@@ -31,6 +31,9 @@ func (bc *Blockchain) ValidateChain() bool {
 	if len(bc.Blocks) == 0 {
 		return false
 	}
+
+	var previousTransactions []Transaction
+
 	for i, currentBlock := range bc.Blocks {
 		if currentBlock.Height != uint64(i) {
 			return false
@@ -38,12 +41,6 @@ func (bc *Blockchain) ValidateChain() bool {
 
 		if i == 0 && len(currentBlock.PrevHash) != 0 {
 			return false
-		}
-
-		for _, tx := range currentBlock.Transactions {
-			if !tx.ValidateID() {
-				return false
-			}
 		}
 
 		pow := NewProofOfWork(currentBlock)
@@ -58,6 +55,19 @@ func (bc *Blockchain) ValidateChain() bool {
 			if !bytes.Equal(currentBlock.PrevHash, previousBlock.Hash) {
 				return false
 			}
+		}
+
+		for txIndex := range currentBlock.Transactions {
+			tx := &currentBlock.Transactions[txIndex]
+
+			if !tx.Validate(previousTransactions) {
+				return false
+			}
+
+			previousTransactions = append(
+				previousTransactions,
+				*tx,
+			)
 		}
 	}
 

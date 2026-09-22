@@ -307,3 +307,60 @@ func TestValidateChainRejectsInvalidTransactionIDAfterRemining(t *testing.T) {
 		t.Fatal("blockchain should reject an invalid transaction ID even after remining")
 	}
 }
+func TestValidateChainAcceptsValidSignedTransaction(t *testing.T) {
+	aliceWallet := NewWallet()
+	bobWallet := NewWallet()
+
+	blockchain := NewBlockchain()
+
+	// Block 1：创建 50 给 Alice
+	funding := Transaction{
+		Outputs: []TXOutput{
+			{
+				Value: 50,
+				To:    aliceWallet.Address(),
+			},
+		},
+	}
+
+	funding.SetID()
+
+	blockchain.AddBlock([]Transaction{funding})
+
+	// Block 2：Alice 花自己的 50
+	// 10 给 Bob，40 找零给自己
+	spend := Transaction{
+		From:   aliceWallet.Address(),
+		To:     bobWallet.Address(),
+		Amount: 10,
+		Inputs: []TXInput{
+			{
+				TxID:     funding.ID,
+				OutIndex: 0,
+				From:     aliceWallet.Address(),
+			},
+		},
+		Outputs: []TXOutput{
+			{
+				Value: 10,
+				To:    bobWallet.Address(),
+			},
+			{
+				Value: 40,
+				To:    aliceWallet.Address(),
+			},
+		},
+	}
+
+	spend.SetID()
+
+	if err := spend.Sign(aliceWallet); err != nil {
+		t.Fatalf("failed to sign transaction: %v", err)
+	}
+
+	blockchain.AddBlock([]Transaction{spend})
+
+	if !blockchain.ValidateChain() {
+		t.Fatal("expected blockchain with valid signed transaction to be valid")
+	}
+}
