@@ -1006,6 +1006,7 @@ func TestTransactionCanIdentifyCoinbase(t *testing.T) {
 	aliceWallet := NewWallet()
 
 	coinbase := Transaction{
+		Coinbase: true,
 		Outputs: []TXOutput{
 			{
 				Value: 50,
@@ -1084,5 +1085,69 @@ func TestValidateChainRejectsTransactionSpendingAnotherWalletOutput(t *testing.T
 	// 但 theft 不应该通过交易所有权验证。
 	if blockchain.ValidateChain() {
 		t.Fatal("blockchain should reject transaction spending another wallet's output")
+	}
+}
+func TestTransactionWithoutInputsIsNotAutomaticallyCoinbase(t *testing.T) {
+	tx := Transaction{
+		Outputs: []TXOutput{
+			{
+				Value: 1000000,
+				To:    "hacker",
+			},
+		},
+	}
+
+	if tx.IsCoinbase() {
+		t.Fatal("transaction should not be coinbase just because it has no inputs")
+	}
+}
+func TestNewCoinbaseTransaction(t *testing.T) {
+	aliceWallet := NewWallet()
+
+	tx := NewCoinbaseTransaction(
+		aliceWallet.Address(),
+		50,
+	)
+
+	if !tx.IsCoinbase() {
+		t.Fatal("expected transaction to be coinbase")
+	}
+
+	if len(tx.Inputs) != 0 {
+		t.Fatal("expected coinbase transaction to have no inputs")
+	}
+
+	if len(tx.Outputs) != 1 {
+		t.Fatalf(
+			"expected coinbase transaction to have 1 output, got %d",
+			len(tx.Outputs),
+		)
+	}
+
+	if tx.Outputs[0].Value != 50 {
+		t.Fatalf(
+			"expected coinbase output value 50, got %d",
+			tx.Outputs[0].Value,
+		)
+	}
+
+	if tx.Outputs[0].To != aliceWallet.Address() {
+		t.Fatal("expected coinbase output to belong to Alice")
+	}
+
+	if len(tx.ID) == 0 {
+		t.Fatal("expected coinbase transaction to have an ID")
+	}
+}
+func TestCoinbaseRejectsInvalidReward(t *testing.T) {
+	hackerWallet := NewWallet()
+
+	tx := NewCoinbaseTransaction(
+		hackerWallet.Address(),
+		1000000,
+	)
+
+	if tx.Validate(nil) {
+		t.Fatal("coinbase transaction should reject reward larger than allowed")
 	}
 }

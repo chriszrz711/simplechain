@@ -6,13 +6,16 @@ import (
 	"fmt"
 )
 
+const CoinbaseReward = 50
+
 type Transaction struct {
-	ID      []byte
-	From    string
-	To      string
-	Amount  int
-	Inputs  []TXInput
-	Outputs []TXOutput
+	ID       []byte
+	From     string
+	To       string
+	Amount   int
+	Coinbase bool
+	Inputs   []TXInput
+	Outputs  []TXOutput
 }
 type TXOutput struct {
 	Value int
@@ -92,7 +95,14 @@ func (tx *Transaction) VerifyInputs(transactions []Transaction) bool {
 func (tx *Transaction) SigningData() []byte {
 	var data bytes.Buffer
 
-	fmt.Fprintf(&data, "%s|%s|%d|", tx.From, tx.To, tx.Amount)
+	fmt.Fprintf(
+		&data,
+		"%s|%s|%d|%t|",
+		tx.From,
+		tx.To,
+		tx.Amount,
+		tx.Coinbase,
+	)
 
 	for _, in := range tx.Inputs {
 		fmt.Fprintf(
@@ -279,7 +289,7 @@ func (tx *Transaction) VerifySignatures() bool {
 	return true
 }
 func (tx *Transaction) IsCoinbase() bool {
-	return len(tx.Inputs) == 0
+	return tx.Coinbase
 }
 func (tx *Transaction) Validate(previousTransactions []Transaction) bool {
 	if !tx.ValidateID() {
@@ -287,7 +297,7 @@ func (tx *Transaction) Validate(previousTransactions []Transaction) bool {
 	}
 
 	if tx.IsCoinbase() {
-		return true
+		return tx.ValidateCoinbase()
 	}
 
 	if !tx.VerifySignatures() {
@@ -299,4 +309,48 @@ func (tx *Transaction) Validate(previousTransactions []Transaction) bool {
 	}
 
 	return true
+}
+func (tx *Transaction) ValidateCoinbase() bool {
+	if !tx.IsCoinbase() {
+		return false
+	}
+
+	if len(tx.Inputs) != 0 {
+		return false
+	}
+
+	if tx.Amount != CoinbaseReward {
+		return false
+	}
+
+	if len(tx.Outputs) != 1 {
+		return false
+	}
+
+	if tx.Outputs[0].Value != CoinbaseReward {
+		return false
+	}
+
+	if tx.Outputs[0].To != tx.To {
+		return false
+	}
+
+	return true
+}
+func NewCoinbaseTransaction(to string, amount int) *Transaction {
+	tx := &Transaction{
+		To:       to,
+		Amount:   amount,
+		Coinbase: true,
+		Outputs: []TXOutput{
+			{
+				Value: amount,
+				To:    to,
+			},
+		},
+	}
+
+	tx.SetID()
+
+	return tx
 }

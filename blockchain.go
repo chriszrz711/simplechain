@@ -56,9 +56,21 @@ func (bc *Blockchain) ValidateChain() bool {
 				return false
 			}
 		}
-
+		coinbaseCount := 0
 		for txIndex := range currentBlock.Transactions {
 			tx := &currentBlock.Transactions[txIndex]
+
+			if tx.IsCoinbase() {
+				coinbaseCount++
+
+				if coinbaseCount > 1 {
+					return false
+				}
+
+				if txIndex != 0 {
+					return false
+				}
+			}
 
 			if !tx.Validate(previousTransactions) {
 				return false

@@ -364,3 +364,92 @@ func TestValidateChainAcceptsValidSignedTransaction(t *testing.T) {
 		t.Fatal("expected blockchain with valid signed transaction to be valid")
 	}
 }
+func TestValidateChainRejectsMultipleCoinbaseTransactionsInOneBlock(t *testing.T) {
+	aliceWallet := NewWallet()
+	bobWallet := NewWallet()
+
+	blockchain := NewBlockchain()
+
+	coinbase1 := NewCoinbaseTransaction(
+		aliceWallet.Address(),
+		CoinbaseReward,
+	)
+
+	coinbase2 := NewCoinbaseTransaction(
+		bobWallet.Address(),
+		CoinbaseReward,
+	)
+
+	blockchain.AddBlock([]Transaction{
+		*coinbase1,
+		*coinbase2,
+	})
+
+	if blockchain.ValidateChain() {
+		t.Fatal("blockchain should reject multiple coinbase transactions in one block")
+	}
+}
+func TestValidateChainRejectsCoinbaseNotFirstInBlock(t *testing.T) {
+	aliceWallet := NewWallet()
+	bobWallet := NewWallet()
+	minerWallet := NewWallet()
+
+	blockchain := NewBlockchain()
+
+	// Block 1:
+	// Coinbase 给 Alice 50
+	funding := NewCoinbaseTransaction(
+		aliceWallet.Address(),
+		CoinbaseReward,
+	)
+
+	blockchain.AddBlock([]Transaction{
+		*funding,
+	})
+
+	// Alice 花 funding:0
+	spend := Transaction{
+		From:   aliceWallet.Address(),
+		To:     bobWallet.Address(),
+		Amount: 10,
+		Inputs: []TXInput{
+			{
+				TxID:     funding.ID,
+				OutIndex: 0,
+				From:     aliceWallet.Address(),
+			},
+		},
+		Outputs: []TXOutput{
+			{
+				Value: 10,
+				To:    bobWallet.Address(),
+			},
+			{
+				Value: 40,
+				To:    aliceWallet.Address(),
+			},
+		},
+	}
+
+	spend.SetID()
+
+	if err := spend.Sign(aliceWallet); err != nil {
+		t.Fatalf("failed to sign spend transaction: %v", err)
+	}
+
+	// Block 2 的 Coinbase
+	coinbase := NewCoinbaseTransaction(
+		minerWallet.Address(),
+		CoinbaseReward,
+	)
+
+	// 故意把普通交易放前面，Coinbase 放第二
+	blockchain.AddBlock([]Transaction{
+		spend,
+		*coinbase,
+	})
+
+	if blockchain.ValidateChain() {
+		t.Fatal("blockchain should reject coinbase transaction that is not first in block")
+	}
+}
