@@ -6,14 +6,16 @@ import (
 )
 
 type Blockchain struct {
-	Blocks []*Block
+	Blocks  []*Block
+	UTXOSet map[string]TXOutput
 }
 
 func NewBlockchain() *Blockchain {
 	genesis := NewGenesisBlock()
 
 	return &Blockchain{
-		Blocks: []*Block{genesis},
+		Blocks:  []*Block{genesis},
+		UTXOSet: make(map[string]TXOutput),
 	}
 }
 func (bc *Blockchain) AddBlock(transactions []Transaction) error {
@@ -39,12 +41,15 @@ func (bc *Blockchain) AddBlock(transactions []Transaction) error {
 
 	// 4. 全部通过后才真正修改 blockchain
 	bc.Blocks = append(bc.Blocks, newBlock)
+	bc.updateUTXOSet(newBlock.Transactions)
 
 	return nil
 }
 
 // addBlockUnchecked constructs fixtures without validating the chain.
-func (bc *Blockchain) addBlockUnchecked(transactions []Transaction) *Block {
+func (bc *Blockchain) addBlockUnchecked(
+	transactions []Transaction,
+) *Block {
 	lastBlock := bc.Blocks[len(bc.Blocks)-1]
 
 	newBlock := NewBlock(
@@ -54,6 +59,8 @@ func (bc *Blockchain) addBlockUnchecked(transactions []Transaction) *Block {
 	)
 
 	bc.Blocks = append(bc.Blocks, newBlock)
+	bc.updateUTXOSet(newBlock.Transactions)
+
 	return newBlock
 }
 
@@ -100,13 +107,12 @@ func (bc *Blockchain) ValidateChain() bool {
 	return true
 }
 func (bc *Blockchain) AddBlockValidated(block *Block) error {
-	// 先验证 candidate block
 	if !bc.ValidateNextBlock(block) {
 		return fmt.Errorf("invalid block")
 	}
 
-	// 验证通过以后才真正修改 blockchain
 	bc.Blocks = append(bc.Blocks, block)
+	bc.updateUTXOSet(block.Transactions)
 
 	return nil
 }
@@ -245,4 +251,59 @@ func (bc *Blockchain) validateNextBlockStructure(block *Block) bool {
 	}
 
 	return true
+}
+func (bc *Blockchain) BuildUTXOSet() map[string]TXOutput {
+	utxoSet := make(map[string]TXOutput)
+
+	for _, block := range bc.Blocks {
+		applyTransactionsToUTXOSet(
+			utxoSet,
+			block.Transactions,
+		)
+	}
+
+	return utxoSet
+}
+func applyTransactionsToUTXOSet(
+	utxoSet map[string]TXOutput,
+	transactions []Transaction,
+) {
+	for _, tx := range transactions {
+
+		// 普通交易会消费旧 UTXO
+		if !tx.IsCoinbase() {
+			for _, input := range tx.Inputs {
+				key := fmt.Sprintf(
+					"%x:%d",
+					input.TxID,
+					input.OutIndex,
+				)
+
+				delete(utxoSet, key)
+			}
+		}
+
+		// 每笔交易都会创建新的 Outputs
+		for outputIndex, output := range tx.Outputs {
+			key := fmt.Sprintf(
+				"%x:%d",
+				tx.ID,
+				outputIndex,
+			)
+
+			utxoSet[key] = output
+		}
+	}
+}
+func (bc *Blockchain) updateUTXOSet(
+	transactions []Transaction,
+) {
+	if bc.UTXOSet == nil {
+		bc.UTXOSet = make(map[string]TXOutput)
+	}
+
+	applyTransactionsToUTXOSet(
+		bc.UTXOSet,
+		transactions,
+	)
 }

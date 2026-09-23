@@ -1621,3 +1621,49 @@ func TestAddBlockValidatedRejectsInvalidBlock(t *testing.T) {
 		t.Fatal("invalid block should not be added to blockchain")
 	}
 }
+func TestValidateWithUTXOSetAcceptsValidTransaction(t *testing.T) {
+	bc := NewBlockchain()
+
+	alice := NewWallet()
+	bob := NewWallet()
+
+	// Alice 先获得 50
+	coinbase := NewCoinbaseTransaction(
+		alice.Address(),
+		CoinbaseReward,
+	)
+
+	if err := bc.AddBlock([]Transaction{
+		*coinbase,
+	}); err != nil {
+		t.Fatalf(
+			"failed to add coinbase block: %v",
+			err,
+		)
+	}
+
+	// 先继续使用现有方式创建并签名交易
+	payment, err := NewSignedUTXOTransaction(
+		alice,
+		bob.Address(),
+		30,
+		[]Transaction{
+			*coinbase,
+		},
+	)
+	if err != nil {
+		t.Fatalf(
+			"failed to create payment: %v",
+			err,
+		)
+	}
+
+	// 新目标：
+	// 不再把 previousTransactions 交给验证函数，
+	// 而是直接使用当前 UTXOSet
+	if !payment.ValidateWithUTXOSet(bc.UTXOSet) {
+		t.Fatal(
+			"expected valid transaction to pass UTXO set validation",
+		)
+	}
+}

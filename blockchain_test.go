@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 )
 
@@ -810,5 +811,409 @@ func TestValidateNextBlockRejectsInvalidPoW(t *testing.T) {
 
 	if bc.ValidateNextBlock(candidate) {
 		t.Fatal("expected block with invalid proof of work to be rejected")
+	}
+}
+func TestBuildUTXOSetIncludesUnspentCoinbaseOutput(t *testing.T) {
+	bc := NewBlockchain()
+
+	coinbase := NewCoinbaseTransaction(
+		"Alice",
+		CoinbaseReward,
+	)
+
+	err := bc.AddBlock([]Transaction{
+		*coinbase,
+	})
+	if err != nil {
+		t.Fatalf("failed to add block: %v", err)
+	}
+
+	utxoSet := bc.BuildUTXOSet()
+
+	key := fmt.Sprintf(
+		"%x:%d",
+		coinbase.ID,
+		0,
+	)
+
+	output, exists := utxoSet[key]
+
+	if !exists {
+		t.Fatal("expected coinbase output to exist in UTXO set")
+	}
+
+	if output.Value != CoinbaseReward {
+		t.Fatalf(
+			"expected UTXO value %d, got %d",
+			CoinbaseReward,
+			output.Value,
+		)
+	}
+
+	if output.To != "Alice" {
+		t.Fatalf(
+			"expected UTXO owner Alice, got %s",
+			output.To,
+		)
+	}
+}
+func TestBuildUTXOSetRemovesSpentOutput(t *testing.T) {
+	bc := NewBlockchain()
+
+	alice := NewWallet()
+	bob := NewWallet()
+
+	// 1. Alice 先通过 Coinbase 获得 50
+	coinbase := NewCoinbaseTransaction(
+		alice.Address(),
+		CoinbaseReward,
+	)
+
+	if err := bc.AddBlock([]Transaction{
+		*coinbase,
+	}); err != nil {
+		t.Fatalf("failed to add coinbase block: %v", err)
+	}
+
+	// 2. Alice 花 30 给 Bob
+	payment, err := NewSignedUTXOTransaction(
+		alice,
+		bob.Address(),
+		30,
+		[]Transaction{
+			*coinbase,
+		},
+	)
+	if err != nil {
+		t.Fatalf("failed to create payment: %v", err)
+	}
+
+	if err := bc.AddBlock([]Transaction{
+		*payment,
+	}); err != nil {
+		t.Fatalf("failed to add payment block: %v", err)
+	}
+
+	// 3. 根据整条链重新构建当前 UTXO Set
+	utxoSet := bc.BuildUTXOSet()
+
+	// Coinbase 原来的 50 已经被 Alice 花掉
+	oldKey := fmt.Sprintf(
+		"%x:%d",
+		coinbase.ID,
+		0,
+	)
+
+	if _, exists := utxoSet[oldKey]; exists {
+		t.Fatal("spent coinbase output should not remain in UTXO set")
+	}
+
+	// payment output 0 = Bob 30
+	bobKey := fmt.Sprintf(
+		"%x:%d",
+		payment.ID,
+		0,
+	)
+
+	bobOutput, exists := utxoSet[bobKey]
+	if !exists {
+		t.Fatal("expected Bob payment output in UTXO set")
+	}
+
+	if bobOutput.Value != 30 {
+		t.Fatalf(
+			"expected Bob UTXO value 30, got %d",
+			bobOutput.Value,
+		)
+	}
+
+	if bobOutput.To != bob.Address() {
+		t.Fatal("expected payment output to belong to Bob")
+	}
+
+	// payment output 1 = Alice 找零 20
+	aliceChangeKey := fmt.Sprintf(
+		"%x:%d",
+		payment.ID,
+		1,
+	)
+
+	aliceChange, exists := utxoSet[aliceChangeKey]
+	if !exists {
+		t.Fatal("expected Alice change output in UTXO set")
+	}
+
+	if aliceChange.Value != 20 {
+		t.Fatalf(
+			"expected Alice change value 20, got %d",
+			aliceChange.Value,
+		)
+	}
+
+	if aliceChange.To != alice.Address() {
+		t.Fatal("expected change output to belong to Alice")
+	}
+}
+func TestBlockchainMaintainsUTXOSet(t *testing.T) {
+	bc := NewBlockchain()
+
+	alice := NewWallet()
+
+	coinbase := NewCoinbaseTransaction(
+		alice.Address(),
+		CoinbaseReward,
+	)
+
+	if err := bc.AddBlock([]Transaction{
+		*coinbase,
+	}); err != nil {
+		t.Fatalf("failed to add coinbase block: %v", err)
+	}
+
+	key := fmt.Sprintf(
+		"%x:%d",
+		coinbase.ID,
+		0,
+	)
+
+	output, exists := bc.UTXOSet[key]
+
+	if !exists {
+		t.Fatal(
+			"expected coinbase output to exist in blockchain UTXO set",
+		)
+	}
+
+	if output.Value != CoinbaseReward {
+		t.Fatalf(
+			"expected UTXO value %d, got %d",
+			CoinbaseReward,
+			output.Value,
+		)
+	}
+
+	if output.To != alice.Address() {
+		t.Fatal(
+			"expected UTXO to belong to Alice",
+		)
+	}
+}
+func TestBlockchainUTXOSetUpdatesAfterSpend(t *testing.T) {
+	bc := NewBlockchain()
+
+	alice := NewWallet()
+	bob := NewWallet()
+
+	// 1. Alice 通过 Coinbase 获得 50
+	coinbase := NewCoinbaseTransaction(
+		alice.Address(),
+		CoinbaseReward,
+	)
+
+	if err := bc.AddBlock([]Transaction{
+		*coinbase,
+	}); err != nil {
+		t.Fatalf(
+			"failed to add coinbase block: %v",
+			err,
+		)
+	}
+
+	// 2. Alice 花 30 给 Bob
+	payment, err := NewSignedUTXOTransaction(
+		alice,
+		bob.Address(),
+		30,
+		[]Transaction{
+			*coinbase,
+		},
+	)
+	if err != nil {
+		t.Fatalf(
+			"failed to create payment transaction: %v",
+			err,
+		)
+	}
+
+	if err := bc.AddBlock([]Transaction{
+		*payment,
+	}); err != nil {
+		t.Fatalf(
+			"failed to add payment block: %v",
+			err,
+		)
+	}
+
+	// 3. 原来的 Coinbase UTXO 必须已经消失
+	oldKey := fmt.Sprintf(
+		"%x:%d",
+		coinbase.ID,
+		0,
+	)
+
+	if _, exists := bc.UTXOSet[oldKey]; exists {
+		t.Fatal(
+			"spent coinbase output should not remain in blockchain UTXO set",
+		)
+	}
+
+	// 4. Bob 应该有新的 30
+	bobKey := fmt.Sprintf(
+		"%x:%d",
+		payment.ID,
+		0,
+	)
+
+	bobOutput, exists := bc.UTXOSet[bobKey]
+	if !exists {
+		t.Fatal(
+			"expected Bob payment output in blockchain UTXO set",
+		)
+	}
+
+	if bobOutput.Value != 30 {
+		t.Fatalf(
+			"expected Bob UTXO value 30, got %d",
+			bobOutput.Value,
+		)
+	}
+
+	if bobOutput.To != bob.Address() {
+		t.Fatal(
+			"expected payment output to belong to Bob",
+		)
+	}
+
+	// 5. Alice 应该有 20 找零
+	aliceChangeKey := fmt.Sprintf(
+		"%x:%d",
+		payment.ID,
+		1,
+	)
+
+	aliceChange, exists := bc.UTXOSet[aliceChangeKey]
+	if !exists {
+		t.Fatal(
+			"expected Alice change output in blockchain UTXO set",
+		)
+	}
+
+	if aliceChange.Value != 20 {
+		t.Fatalf(
+			"expected Alice change value 20, got %d",
+			aliceChange.Value,
+		)
+	}
+
+	if aliceChange.To != alice.Address() {
+		t.Fatal(
+			"expected change output to belong to Alice",
+		)
+	}
+}
+func TestBlockchainUTXOSetMatchesRebuiltUTXOSet(t *testing.T) {
+	bc := NewBlockchain()
+
+	alice := NewWallet()
+	bob := NewWallet()
+	charlie := NewWallet()
+
+	// 1. Alice 获得 Coinbase 50
+	coinbase := NewCoinbaseTransaction(
+		alice.Address(),
+		CoinbaseReward,
+	)
+
+	if err := bc.AddBlock([]Transaction{
+		*coinbase,
+	}); err != nil {
+		t.Fatalf(
+			"failed to add coinbase block: %v",
+			err,
+		)
+	}
+
+	// 2. Alice 给 Bob 30，Alice 找零 20
+	payment1, err := NewSignedUTXOTransaction(
+		alice,
+		bob.Address(),
+		30,
+		[]Transaction{
+			*coinbase,
+		},
+	)
+	if err != nil {
+		t.Fatalf(
+			"failed to create first payment: %v",
+			err,
+		)
+	}
+
+	if err := bc.AddBlock([]Transaction{
+		*payment1,
+	}); err != nil {
+		t.Fatalf(
+			"failed to add first payment block: %v",
+			err,
+		)
+	}
+
+	// 3. Bob 再给 Charlie 10
+	payment2, err := NewSignedUTXOTransaction(
+		bob,
+		charlie.Address(),
+		10,
+		[]Transaction{
+			*coinbase,
+			*payment1,
+		},
+	)
+	if err != nil {
+		t.Fatalf(
+			"failed to create second payment: %v",
+			err,
+		)
+	}
+
+	if err := bc.AddBlock([]Transaction{
+		*payment2,
+	}); err != nil {
+		t.Fatalf(
+			"failed to add second payment block: %v",
+			err,
+		)
+	}
+
+	// 4. 从完整 Blockchain 历史重新计算
+	rebuilt := bc.BuildUTXOSet()
+
+	// 5. 数量必须一样
+	if len(bc.UTXOSet) != len(rebuilt) {
+		t.Fatalf(
+			"UTXO set size mismatch: cached=%d rebuilt=%d",
+			len(bc.UTXOSet),
+			len(rebuilt),
+		)
+	}
+
+	// 6. 每一个 cached UTXO 都必须和 rebuilt 完全一样
+	for key, cachedOutput := range bc.UTXOSet {
+		rebuiltOutput, exists := rebuilt[key]
+
+		if !exists {
+			t.Fatalf(
+				"cached UTXO %s missing from rebuilt UTXO set",
+				key,
+			)
+		}
+
+		if cachedOutput != rebuiltOutput {
+			t.Fatalf(
+				"UTXO mismatch for %s: cached=%+v rebuilt=%+v",
+				key,
+				cachedOutput,
+				rebuiltOutput,
+			)
+		}
 	}
 }
