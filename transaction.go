@@ -363,6 +363,9 @@ func (tx *Transaction) ValidateAmounts(previousTransactions []Transaction) bool 
 		if output.Value <= 0 {
 			return false
 		}
+		if output.To == "" {
+			return false
+		}
 
 		outputTotal += output.Value
 	}
@@ -374,7 +377,9 @@ func (tx *Transaction) ValidateCoinbase() bool {
 	if !tx.IsCoinbase() {
 		return false
 	}
-
+	if tx.To == "" {
+		return false
+	}
 	if len(tx.Inputs) != 0 {
 		return false
 	}

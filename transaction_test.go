@@ -1189,3 +1189,49 @@ func TestTransactionRejectsOutputsGreaterThanInputs(t *testing.T) {
 		t.Fatal("transaction should reject outputs greater than inputs")
 	}
 }
+func TestTransactionRejectsEmptyOutputAddress(t *testing.T) {
+	aliceWallet := NewWallet()
+
+	funding := NewCoinbaseTransaction(
+		aliceWallet.Address(),
+		CoinbaseReward,
+	)
+
+	spend := Transaction{
+		From:   aliceWallet.Address(),
+		Amount: 50,
+		Inputs: []TXInput{
+			{
+				TxID:     funding.ID,
+				OutIndex: 0,
+				From:     aliceWallet.Address(),
+			},
+		},
+		Outputs: []TXOutput{
+			{
+				Value: 50,
+				To:    "",
+			},
+		},
+	}
+
+	spend.SetID()
+
+	if err := spend.Sign(aliceWallet); err != nil {
+		t.Fatalf("failed to sign transaction: %v", err)
+	}
+
+	if spend.Validate([]Transaction{*funding}) {
+		t.Fatal("transaction should reject output with empty recipient")
+	}
+}
+func TestCoinbaseRejectsEmptyRecipient(t *testing.T) {
+	tx := NewCoinbaseTransaction(
+		"",
+		CoinbaseReward,
+	)
+
+	if tx.Validate(nil) {
+		t.Fatal("coinbase transaction should reject empty recipient")
+	}
+}
