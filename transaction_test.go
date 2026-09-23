@@ -1151,3 +1151,41 @@ func TestCoinbaseRejectsInvalidReward(t *testing.T) {
 		t.Fatal("coinbase transaction should reject reward larger than allowed")
 	}
 }
+func TestTransactionRejectsOutputsGreaterThanInputs(t *testing.T) {
+	aliceWallet := NewWallet()
+	bobWallet := NewWallet()
+
+	funding := NewCoinbaseTransaction(
+		aliceWallet.Address(),
+		CoinbaseReward,
+	)
+
+	spend := Transaction{
+		From:   aliceWallet.Address(),
+		To:     bobWallet.Address(),
+		Amount: 1000,
+		Inputs: []TXInput{
+			{
+				TxID:     funding.ID,
+				OutIndex: 0,
+				From:     aliceWallet.Address(),
+			},
+		},
+		Outputs: []TXOutput{
+			{
+				Value: 1000,
+				To:    bobWallet.Address(),
+			},
+		},
+	}
+
+	spend.SetID()
+
+	if err := spend.Sign(aliceWallet); err != nil {
+		t.Fatalf("failed to sign transaction: %v", err)
+	}
+
+	if spend.Validate([]Transaction{*funding}) {
+		t.Fatal("transaction should reject outputs greater than inputs")
+	}
+}

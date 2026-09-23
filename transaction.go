@@ -300,6 +300,10 @@ func (tx *Transaction) Validate(previousTransactions []Transaction) bool {
 		return tx.ValidateCoinbase()
 	}
 
+	if len(tx.Inputs) == 0 {
+		return false
+	}
+
 	if !tx.VerifySignatures() {
 		return false
 	}
@@ -308,8 +312,64 @@ func (tx *Transaction) Validate(previousTransactions []Transaction) bool {
 		return false
 	}
 
+	if !tx.ValidateAmounts(previousTransactions) {
+		return false
+	}
+
 	return true
 }
+func (tx *Transaction) ValidateAmounts(previousTransactions []Transaction) bool {
+	inputTotal := 0
+	seenInputs := make(map[string]bool)
+
+	for _, input := range tx.Inputs {
+		key := fmt.Sprintf(
+			"%x:%d",
+			input.TxID,
+			input.OutIndex,
+		)
+
+		// 同一笔交易不能把同一个 UTXO 算两次
+		if seenInputs[key] {
+			return false
+		}
+		seenInputs[key] = true
+
+		found := false
+
+		for _, previousTx := range previousTransactions {
+			if !bytes.Equal(input.TxID, previousTx.ID) {
+				continue
+			}
+
+			if input.OutIndex < 0 ||
+				input.OutIndex >= len(previousTx.Outputs) {
+				return false
+			}
+
+			inputTotal += previousTx.Outputs[input.OutIndex].Value
+			found = true
+			break
+		}
+
+		if !found {
+			return false
+		}
+	}
+
+	outputTotal := 0
+
+	for _, output := range tx.Outputs {
+		if output.Value <= 0 {
+			return false
+		}
+
+		outputTotal += output.Value
+	}
+
+	return inputTotal == outputTotal
+}
+
 func (tx *Transaction) ValidateCoinbase() bool {
 	if !tx.IsCoinbase() {
 		return false

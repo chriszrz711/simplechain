@@ -99,8 +99,8 @@ func TestAddMultipleBlocksLinksCorrectly(t *testing.T) {
 func TestValidateChainReturnsTrueForValidChain(t *testing.T) {
 	blockchain := NewBlockchain()
 
-	tx1 := NewTransaction("Alice", "Bob", 10)
-	tx2 := NewTransaction("Bob", "Charlie", 5)
+	tx1 := NewCoinbaseTransaction("Alice", CoinbaseReward)
+	tx2 := NewCoinbaseTransaction("Bob", CoinbaseReward)
 	blockchain.AddBlock([]Transaction{*tx1})
 	blockchain.AddBlock([]Transaction{*tx2})
 
@@ -278,7 +278,7 @@ func TestValidateChainRejectsEmptyBlockchain(t *testing.T) {
 
 func TestValidateChainRejectsInvalidTransactionIDAfterRemining(t *testing.T) {
 	blockchain := NewBlockchain()
-	tx := NewTransaction("Alice", "Bob", 10)
+	tx := NewCoinbaseTransaction("Alice", CoinbaseReward)
 	blockchain.AddBlock([]Transaction{*tx})
 
 	if !blockchain.ValidateChain() {
@@ -288,7 +288,12 @@ func TestValidateChainRejectsInvalidTransactionIDAfterRemining(t *testing.T) {
 	block := blockchain.Blocks[1]
 
 	// 故意不调用 SetID()，让交易内容与原 ID 不一致。
-	block.Transactions[0].Amount = 1000
+	block.Transactions[0].To = "Mallory"
+	block.Transactions[0].Outputs[0].To = "Mallory"
+
+	if !block.Transactions[0].ValidateCoinbase() {
+		t.Fatal("tampered transaction should retain valid coinbase structure")
+	}
 
 	pow := NewProofOfWork(block)
 	nonce, hash := pow.Run()
@@ -307,25 +312,22 @@ func TestValidateChainRejectsInvalidTransactionIDAfterRemining(t *testing.T) {
 		t.Fatal("blockchain should reject an invalid transaction ID even after remining")
 	}
 }
+
 func TestValidateChainAcceptsValidSignedTransaction(t *testing.T) {
 	aliceWallet := NewWallet()
 	bobWallet := NewWallet()
 
 	blockchain := NewBlockchain()
 
-	// Block 1：创建 50 给 Alice
-	funding := Transaction{
-		Outputs: []TXOutput{
-			{
-				Value: 50,
-				To:    aliceWallet.Address(),
-			},
-		},
-	}
+	// Block 1：Coinbase 创建 50 给 Alice
+	funding := NewCoinbaseTransaction(
+		aliceWallet.Address(),
+		CoinbaseReward,
+	)
 
-	funding.SetID()
-
-	blockchain.AddBlock([]Transaction{funding})
+	blockchain.AddBlock([]Transaction{
+		*funding,
+	})
 
 	// Block 2：Alice 花自己的 50
 	// 10 给 Bob，40 找零给自己
@@ -358,7 +360,9 @@ func TestValidateChainAcceptsValidSignedTransaction(t *testing.T) {
 		t.Fatalf("failed to sign transaction: %v", err)
 	}
 
-	blockchain.AddBlock([]Transaction{spend})
+	blockchain.AddBlock([]Transaction{
+		spend,
+	})
 
 	if !blockchain.ValidateChain() {
 		t.Fatal("expected blockchain with valid signed transaction to be valid")
@@ -451,5 +455,200 @@ func TestValidateChainRejectsCoinbaseNotFirstInBlock(t *testing.T) {
 
 	if blockchain.ValidateChain() {
 		t.Fatal("blockchain should reject coinbase transaction that is not first in block")
+	}
+}
+func TestValidateChainRejectsDoubleSpend(t *testing.T) {
+	aliceWallet := NewWallet()
+	bobWallet := NewWallet()
+	charlieWallet := NewWallet()
+
+	blockchain := NewBlockchain()
+
+	// Block 1:
+	// Alice 获得 50
+	funding := NewCoinbaseTransaction(
+		aliceWallet.Address(),
+		CoinbaseReward,
+	)
+
+	blockchain.AddBlock([]Transaction{
+		*funding,
+	})
+
+	// Block 2:
+	// Alice 第一次花 funding:0
+	spend1 := Transaction{
+		From:   aliceWallet.Address(),
+		To:     bobWallet.Address(),
+		Amount: 50,
+		Inputs: []TXInput{
+			{
+				TxID:     funding.ID,
+				OutIndex: 0,
+				From:     aliceWallet.Address(),
+			},
+		},
+		Outputs: []TXOutput{
+			{
+				Value: 50,
+				To:    bobWallet.Address(),
+			},
+		},
+	}
+
+	spend1.SetID()
+
+	if err := spend1.Sign(aliceWallet); err != nil {
+		t.Fatalf("failed to sign first spend: %v", err)
+	}
+
+	blockchain.AddBlock([]Transaction{
+		spend1,
+	})
+
+	// Block 3:
+	// Alice 再次花完全相同的 funding:0
+	spend2 := Transaction{
+		From:   aliceWallet.Address(),
+		To:     charlieWallet.Address(),
+		Amount: 50,
+		Inputs: []TXInput{
+			{
+				TxID:     funding.ID,
+				OutIndex: 0,
+				From:     aliceWallet.Address(),
+			},
+		},
+		Outputs: []TXOutput{
+			{
+				Value: 50,
+				To:    charlieWallet.Address(),
+			},
+		},
+	}
+
+	spend2.SetID()
+
+	if err := spend2.Sign(aliceWallet); err != nil {
+		t.Fatalf("failed to sign second spend: %v", err)
+	}
+
+	blockchain.AddBlock([]Transaction{
+		spend2,
+	})
+
+	if blockchain.ValidateChain() {
+		t.Fatal("blockchain should reject double spending of the same output")
+	}
+}
+func TestValidateChainRejectsDuplicateInputInSameTransaction(t *testing.T) {
+	aliceWallet := NewWallet()
+	bobWallet := NewWallet()
+
+	blockchain := NewBlockchain()
+
+	funding := NewCoinbaseTransaction(
+		aliceWallet.Address(),
+		CoinbaseReward,
+	)
+
+	blockchain.AddBlock([]Transaction{
+		*funding,
+	})
+
+	spend := Transaction{
+		From:   aliceWallet.Address(),
+		To:     bobWallet.Address(),
+		Amount: 50,
+		Inputs: []TXInput{
+			{
+				TxID:     funding.ID,
+				OutIndex: 0,
+				From:     aliceWallet.Address(),
+			},
+			{
+				TxID:     funding.ID,
+				OutIndex: 0,
+				From:     aliceWallet.Address(),
+			},
+		},
+		Outputs: []TXOutput{
+			{
+				Value: 50,
+				To:    bobWallet.Address(),
+			},
+		},
+	}
+
+	spend.SetID()
+
+	if err := spend.Sign(aliceWallet); err != nil {
+		t.Fatalf("failed to sign transaction: %v", err)
+	}
+
+	blockchain.AddBlock([]Transaction{
+		spend,
+	})
+
+	if blockchain.ValidateChain() {
+		t.Fatal("blockchain should reject duplicate use of the same output within one transaction")
+	}
+}
+func TestTransactionRejectsNegativeOutput(t *testing.T) {
+	aliceWallet := NewWallet()
+	bobWallet := NewWallet()
+
+	funding := NewCoinbaseTransaction(
+		aliceWallet.Address(),
+		CoinbaseReward,
+	)
+
+	spend := Transaction{
+		From:   aliceWallet.Address(),
+		To:     bobWallet.Address(),
+		Amount: 100,
+		Inputs: []TXInput{
+			{
+				TxID:     funding.ID,
+				OutIndex: 0,
+				From:     aliceWallet.Address(),
+			},
+		},
+		Outputs: []TXOutput{
+			{
+				Value: 100,
+				To:    bobWallet.Address(),
+			},
+			{
+				Value: -50,
+				To:    aliceWallet.Address(),
+			},
+		},
+	}
+
+	spend.SetID()
+
+	if err := spend.Sign(aliceWallet); err != nil {
+		t.Fatalf("failed to sign transaction: %v", err)
+	}
+
+	if spend.Validate([]Transaction{*funding}) {
+		t.Fatal("transaction should reject negative output values")
+	}
+}
+func TestTransactionRejectsNonCoinbaseWithoutInputs(t *testing.T) {
+	aliceWallet := NewWallet()
+	bobWallet := NewWallet()
+
+	tx := Transaction{
+		From:   aliceWallet.Address(),
+		To:     bobWallet.Address(),
+		Amount: 10,
+	}
+
+	tx.SetID()
+
+	if tx.Validate(nil) {
+		t.Fatal("non-coinbase transaction without inputs should be rejected")
 	}
 }

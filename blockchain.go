@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 )
 
 type Blockchain struct {
@@ -31,7 +32,7 @@ func (bc *Blockchain) ValidateChain() bool {
 	if len(bc.Blocks) == 0 {
 		return false
 	}
-
+	spentOutputs := make(map[string]bool)
 	var previousTransactions []Transaction
 
 	for i, currentBlock := range bc.Blocks {
@@ -72,8 +73,45 @@ func (bc *Blockchain) ValidateChain() bool {
 				}
 			}
 
+			// 检查普通交易有没有重复花费同一个 Output
+			if !tx.IsCoinbase() {
+				seenInputs := make(map[string]bool)
+
+				for _, input := range tx.Inputs {
+					key := fmt.Sprintf(
+						"%x:%d",
+						input.TxID,
+						input.OutIndex,
+					)
+
+					if spentOutputs[key] {
+						return false
+					}
+
+					if seenInputs[key] {
+						return false
+					}
+
+					seenInputs[key] = true
+				}
+			}
+
 			if !tx.Validate(previousTransactions) {
 				return false
+			}
+
+			// Transaction 验证通过以后，
+			// 才正式把它使用的 Outputs 标记为 spent
+			if !tx.IsCoinbase() {
+				for _, input := range tx.Inputs {
+					key := fmt.Sprintf(
+						"%x:%d",
+						input.TxID,
+						input.OutIndex,
+					)
+
+					spentOutputs[key] = true
+				}
 			}
 
 			previousTransactions = append(
