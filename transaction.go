@@ -223,6 +223,17 @@ func NewUTXOTransaction(
 	transactions []Transaction,
 ) (*Transaction, error) {
 
+	if amount <= 0 {
+		return nil, fmt.Errorf(
+			"amount must be positive",
+		)
+	}
+	if to == "" {
+		return nil, fmt.Errorf(
+			"recipient cannot be empty",
+		)
+	}
+
 	total, selected := FindSpendableUTXO(
 		transactions,
 		from,
@@ -273,6 +284,35 @@ func NewUTXOTransaction(
 
 	return tx, nil
 }
+
+func NewSignedUTXOTransaction(
+	wallet *Wallet,
+	to string,
+	amount int,
+	transactions []Transaction,
+) (*Transaction, error) {
+
+	if wallet == nil {
+		return nil, fmt.Errorf("wallet cannot be nil")
+	}
+
+	tx, err := NewUTXOTransaction(
+		wallet.Address(),
+		to,
+		amount,
+		transactions,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Sign(wallet); err != nil {
+		return nil, err
+	}
+
+	return tx, nil
+}
+
 func (tx *Transaction) ValidatePaymentDetails() bool {
 	if tx.To == "" {
 		return false

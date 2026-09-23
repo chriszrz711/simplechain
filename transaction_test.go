@@ -1322,3 +1322,166 @@ func TestTransactionRejectsFromThatDoesNotMatchSigner(t *testing.T) {
 		t.Fatal("transaction should reject From that does not match the signing wallet")
 	}
 }
+func TestNewSignedUTXOTransactionCreatesValidSignedTransaction(t *testing.T) {
+	aliceWallet := NewWallet()
+	bobWallet := NewWallet()
+
+	funding := NewCoinbaseTransaction(
+		aliceWallet.Address(),
+		CoinbaseReward,
+	)
+
+	transactions := []Transaction{
+		*funding,
+	}
+
+	tx, err := NewSignedUTXOTransaction(
+		aliceWallet,
+		bobWallet.Address(),
+		10,
+		transactions,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if tx.From != aliceWallet.Address() {
+		t.Fatal("transaction From should match wallet address")
+	}
+
+	if tx.To != bobWallet.Address() {
+		t.Fatal("transaction To should match recipient")
+	}
+
+	if tx.Amount != 10 {
+		t.Fatalf("expected amount 10, got %d", tx.Amount)
+	}
+
+	if !tx.VerifySignatures() {
+		t.Fatal("new transaction should already contain a valid signature")
+	}
+
+	if !tx.Validate(transactions) {
+		t.Fatal("new signed UTXO transaction should be valid")
+	}
+}
+func TestNewSignedUTXOTransactionRejectsInsufficientFunds(t *testing.T) {
+	aliceWallet := NewWallet()
+	bobWallet := NewWallet()
+
+	funding := NewCoinbaseTransaction(
+		aliceWallet.Address(),
+		CoinbaseReward,
+	)
+
+	transactions := []Transaction{
+		*funding,
+	}
+
+	tx, err := NewSignedUTXOTransaction(
+		aliceWallet,
+		bobWallet.Address(),
+		100,
+		transactions,
+	)
+
+	if err == nil {
+		t.Fatal("expected insufficient funds error")
+	}
+
+	if tx != nil {
+		t.Fatal("transaction should be nil when funds are insufficient")
+	}
+}
+func TestNewSignedUTXOTransactionRejectsNonPositiveAmount(t *testing.T) {
+	aliceWallet := NewWallet()
+	bobWallet := NewWallet()
+
+	funding := NewCoinbaseTransaction(
+		aliceWallet.Address(),
+		CoinbaseReward,
+	)
+
+	transactions := []Transaction{
+		*funding,
+	}
+
+	tests := []struct {
+		name   string
+		amount int
+	}{
+		{
+			name:   "zero amount",
+			amount: 0,
+		},
+		{
+			name:   "negative amount",
+			amount: -10,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tx, err := NewSignedUTXOTransaction(
+				aliceWallet,
+				bobWallet.Address(),
+				tt.amount,
+				transactions,
+			)
+
+			if err == nil {
+				t.Fatal("expected error for non-positive amount")
+			}
+
+			if tx != nil {
+				t.Fatal("transaction should be nil for non-positive amount")
+			}
+		})
+	}
+}
+func TestNewSignedUTXOTransactionRejectsEmptyRecipient(t *testing.T) {
+	aliceWallet := NewWallet()
+
+	funding := NewCoinbaseTransaction(
+		aliceWallet.Address(),
+		CoinbaseReward,
+	)
+
+	transactions := []Transaction{
+		*funding,
+	}
+
+	tx, err := NewSignedUTXOTransaction(
+		aliceWallet,
+		"",
+		10,
+		transactions,
+	)
+
+	if err == nil {
+		t.Fatal("expected error for empty recipient")
+	}
+
+	if tx != nil {
+		t.Fatal("transaction should be nil for empty recipient")
+	}
+}
+func TestNewSignedUTXOTransactionRejectsNilWallet(t *testing.T) {
+	bobWallet := NewWallet()
+
+	tx, err := NewSignedUTXOTransaction(
+		nil,
+		bobWallet.Address(),
+		10,
+		nil,
+	)
+
+	if err == nil {
+		t.Fatal("expected error for nil wallet")
+	}
+
+	if tx != nil {
+		t.Fatal("transaction should be nil when wallet is nil")
+	}
+}
