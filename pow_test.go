@@ -58,7 +58,7 @@ func TestProofOfWorkValidateDetectsTamperedHash(t *testing.T) {
 func TestValidateChainRejectsInvalidProofOfWork(t *testing.T) {
 	blockchain := NewBlockchain()
 	tx := NewTransaction("Alice", "Bob", 10)
-	blockchain.AddBlock([]Transaction{*tx})
+	blockchain.addBlockUnchecked([]Transaction{*tx})
 
 	block := blockchain.Blocks[1]
 

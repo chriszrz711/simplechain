@@ -1050,7 +1050,7 @@ func TestValidateChainRejectsTransactionSpendingAnotherWalletOutput(t *testing.T
 	}
 	funding.SetID()
 
-	blockchain.AddBlock([]Transaction{funding})
+	blockchain.addBlockUnchecked([]Transaction{funding})
 
 	// Block 2:
 	// Hacker 试图花 Alice 的 funding:0
@@ -1079,7 +1079,7 @@ func TestValidateChainRejectsTransactionSpendingAnotherWalletOutput(t *testing.T
 		t.Fatalf("failed to sign theft transaction: %v", err)
 	}
 
-	blockchain.AddBlock([]Transaction{theft})
+	blockchain.addBlockUnchecked([]Transaction{theft})
 
 	// 所有 Block 的 PoW 都是真的，
 	// 但 theft 不应该通过交易所有权验证。
@@ -1498,9 +1498,11 @@ func TestEndToEndSignedUTXOTransactions(t *testing.T) {
 		CoinbaseReward,
 	)
 
-	blockchain.AddBlock([]Transaction{
+	if err := blockchain.AddBlock([]Transaction{
 		*funding,
-	})
+	}); err != nil {
+		t.Fatalf("failed to add valid block: %v", err)
+	}
 
 	transactions := []Transaction{
 		*funding,
@@ -1521,9 +1523,11 @@ func TestEndToEndSignedUTXOTransactions(t *testing.T) {
 		)
 	}
 
-	blockchain.AddBlock([]Transaction{
+	if err := blockchain.AddBlock([]Transaction{
 		*aliceToBob,
-	})
+	}); err != nil {
+		t.Fatalf("failed to add valid block: %v", err)
+	}
 
 	transactions = append(
 		transactions,
@@ -1545,9 +1549,11 @@ func TestEndToEndSignedUTXOTransactions(t *testing.T) {
 		)
 	}
 
-	blockchain.AddBlock([]Transaction{
+	if err := blockchain.AddBlock([]Transaction{
 		*bobToCharlie,
-	})
+	}); err != nil {
+		t.Fatalf("failed to add valid block: %v", err)
+	}
 
 	transactions = append(
 		transactions,

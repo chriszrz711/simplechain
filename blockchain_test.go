@@ -39,7 +39,7 @@ func TestAddBlockLinksToPreviousBlock(t *testing.T) {
 	blockchain := NewBlockchain()
 
 	tx := NewTransaction("Alice", "Bob", 10)
-	blockchain.AddBlock([]Transaction{*tx})
+	blockchain.addBlockUnchecked([]Transaction{*tx})
 
 	if len(blockchain.Blocks) != 2 {
 		t.Fatalf(
@@ -67,8 +67,8 @@ func TestAddMultipleBlocksLinksCorrectly(t *testing.T) {
 
 	tx1 := NewTransaction("Alice", "Bob", 10)
 	tx2 := NewTransaction("Bob", "Charlie", 5)
-	blockchain.AddBlock([]Transaction{*tx1})
-	blockchain.AddBlock([]Transaction{*tx2})
+	blockchain.addBlockUnchecked([]Transaction{*tx1})
+	blockchain.addBlockUnchecked([]Transaction{*tx2})
 
 	if len(blockchain.Blocks) != 3 {
 		t.Fatalf(
@@ -101,8 +101,12 @@ func TestValidateChainReturnsTrueForValidChain(t *testing.T) {
 
 	tx1 := NewCoinbaseTransaction("Alice", CoinbaseReward)
 	tx2 := NewCoinbaseTransaction("Bob", CoinbaseReward)
-	blockchain.AddBlock([]Transaction{*tx1})
-	blockchain.AddBlock([]Transaction{*tx2})
+	if err := blockchain.AddBlock([]Transaction{*tx1}); err != nil {
+		t.Fatalf("failed to add valid block: %v", err)
+	}
+	if err := blockchain.AddBlock([]Transaction{*tx2}); err != nil {
+		t.Fatalf("failed to add valid block: %v", err)
+	}
 
 	if !blockchain.ValidateChain() {
 		t.Fatal("expected valid blockchain to pass validation")
@@ -113,8 +117,8 @@ func TestValidateChainDetectsTamperedTransactions(t *testing.T) {
 
 	tx1 := NewTransaction("Alice", "Bob", 10)
 	tx2 := NewTransaction("Bob", "Charlie", 5)
-	blockchain.AddBlock([]Transaction{*tx1})
-	blockchain.AddBlock([]Transaction{*tx2})
+	blockchain.addBlockUnchecked([]Transaction{*tx1})
+	blockchain.addBlockUnchecked([]Transaction{*tx2})
 
 	blockchain.Blocks[1].Transactions[0].Amount = 10000
 	blockchain.Blocks[1].Transactions[0].SetID()
@@ -126,7 +130,7 @@ func TestValidateChainDetectsTamperedTransactions(t *testing.T) {
 func TestValidateChainDetectsTamperedGenesisBlock(t *testing.T) {
 	blockchain := NewBlockchain()
 	tx := NewTransaction("Alice", "Bob", 10)
-	blockchain.AddBlock([]Transaction{*tx})
+	blockchain.addBlockUnchecked([]Transaction{*tx})
 
 	tamperedTx := NewTransaction("Alice", "Bob", 10000)
 	blockchain.Blocks[0].Transactions = []Transaction{*tamperedTx}
@@ -168,7 +172,7 @@ func TestAddBlockWithMultipleTransactions(t *testing.T) {
 	tx2 := NewTransaction("Bob", "Charlie", 5)
 	tx3 := NewTransaction("Charlie", "Dave", 2)
 
-	blockchain.AddBlock([]Transaction{
+	blockchain.addBlockUnchecked([]Transaction{
 		*tx1,
 		*tx2,
 		*tx3,
@@ -228,8 +232,8 @@ func TestValidateChainRejectsIncorrectBlockHeight(t *testing.T) {
 	tx1 := NewTransaction("Alice", "Bob", 10)
 	tx2 := NewTransaction("Bob", "Charlie", 5)
 
-	blockchain.AddBlock([]Transaction{*tx1})
-	blockchain.AddBlock([]Transaction{*tx2})
+	blockchain.addBlockUnchecked([]Transaction{*tx1})
+	blockchain.addBlockUnchecked([]Transaction{*tx2})
 
 	block2 := blockchain.Blocks[2]
 
@@ -279,7 +283,9 @@ func TestValidateChainRejectsEmptyBlockchain(t *testing.T) {
 func TestValidateChainRejectsInvalidTransactionIDAfterRemining(t *testing.T) {
 	blockchain := NewBlockchain()
 	tx := NewCoinbaseTransaction("Alice", CoinbaseReward)
-	blockchain.AddBlock([]Transaction{*tx})
+	if err := blockchain.AddBlock([]Transaction{*tx}); err != nil {
+		t.Fatalf("failed to add valid block: %v", err)
+	}
 
 	if !blockchain.ValidateChain() {
 		t.Fatal("blockchain should be valid before transaction tampering")
@@ -325,9 +331,11 @@ func TestValidateChainAcceptsValidSignedTransaction(t *testing.T) {
 		CoinbaseReward,
 	)
 
-	blockchain.AddBlock([]Transaction{
+	if err := blockchain.AddBlock([]Transaction{
 		*funding,
-	})
+	}); err != nil {
+		t.Fatalf("failed to add valid block: %v", err)
+	}
 
 	// Block 2：Alice 花自己的 50
 	// 10 给 Bob，40 找零给自己
@@ -360,9 +368,11 @@ func TestValidateChainAcceptsValidSignedTransaction(t *testing.T) {
 		t.Fatalf("failed to sign transaction: %v", err)
 	}
 
-	blockchain.AddBlock([]Transaction{
+	if err := blockchain.AddBlock([]Transaction{
 		spend,
-	})
+	}); err != nil {
+		t.Fatalf("failed to add valid block: %v", err)
+	}
 
 	if !blockchain.ValidateChain() {
 		t.Fatal("expected blockchain with valid signed transaction to be valid")
@@ -384,7 +394,7 @@ func TestValidateChainRejectsMultipleCoinbaseTransactionsInOneBlock(t *testing.T
 		CoinbaseReward,
 	)
 
-	blockchain.AddBlock([]Transaction{
+	blockchain.addBlockUnchecked([]Transaction{
 		*coinbase1,
 		*coinbase2,
 	})
@@ -407,7 +417,7 @@ func TestValidateChainRejectsCoinbaseNotFirstInBlock(t *testing.T) {
 		CoinbaseReward,
 	)
 
-	blockchain.AddBlock([]Transaction{
+	blockchain.addBlockUnchecked([]Transaction{
 		*funding,
 	})
 
@@ -448,7 +458,7 @@ func TestValidateChainRejectsCoinbaseNotFirstInBlock(t *testing.T) {
 	)
 
 	// 故意把普通交易放前面，Coinbase 放第二
-	blockchain.AddBlock([]Transaction{
+	blockchain.addBlockUnchecked([]Transaction{
 		spend,
 		*coinbase,
 	})
@@ -471,7 +481,7 @@ func TestValidateChainRejectsDoubleSpend(t *testing.T) {
 		CoinbaseReward,
 	)
 
-	blockchain.AddBlock([]Transaction{
+	blockchain.addBlockUnchecked([]Transaction{
 		*funding,
 	})
 
@@ -502,7 +512,7 @@ func TestValidateChainRejectsDoubleSpend(t *testing.T) {
 		t.Fatalf("failed to sign first spend: %v", err)
 	}
 
-	blockchain.AddBlock([]Transaction{
+	blockchain.addBlockUnchecked([]Transaction{
 		spend1,
 	})
 
@@ -533,7 +543,7 @@ func TestValidateChainRejectsDoubleSpend(t *testing.T) {
 		t.Fatalf("failed to sign second spend: %v", err)
 	}
 
-	blockchain.AddBlock([]Transaction{
+	blockchain.addBlockUnchecked([]Transaction{
 		spend2,
 	})
 
@@ -552,7 +562,7 @@ func TestValidateChainRejectsDuplicateInputInSameTransaction(t *testing.T) {
 		CoinbaseReward,
 	)
 
-	blockchain.AddBlock([]Transaction{
+	blockchain.addBlockUnchecked([]Transaction{
 		*funding,
 	})
 
@@ -586,7 +596,7 @@ func TestValidateChainRejectsDuplicateInputInSameTransaction(t *testing.T) {
 		t.Fatalf("failed to sign transaction: %v", err)
 	}
 
-	blockchain.AddBlock([]Transaction{
+	blockchain.addBlockUnchecked([]Transaction{
 		spend,
 	})
 
@@ -681,5 +691,47 @@ func TestAddBlockValidatedAcceptsValidBlock(t *testing.T) {
 			originalLength+1,
 			len(bc.Blocks),
 		)
+	}
+}
+
+func TestAddBlockRejectsInvalidTransactions(t *testing.T) {
+	bc := NewBlockchain()
+	originalLength := len(bc.Blocks)
+	originalTip := bc.Blocks[originalLength-1]
+	tx := NewTransaction("Alice", "Bob", 10)
+
+	if err := bc.AddBlock([]Transaction{*tx}); err == nil {
+		t.Fatal("expected invalid transactions to be rejected")
+	}
+
+	if len(bc.Blocks) != originalLength {
+		t.Fatal("rejected transaction must not change blockchain length")
+	}
+	if bc.Blocks[originalLength-1] != originalTip {
+		t.Fatal("rejected transaction must not replace the existing tip")
+	}
+	if !bc.ValidateChain() {
+		t.Fatal("blockchain should remain valid after rejection")
+	}
+}
+
+func TestAddBlockAcceptsValidTransactions(t *testing.T) {
+	bc := NewBlockchain()
+	originalLength := len(bc.Blocks)
+	tx := NewCoinbaseTransaction("Alice", CoinbaseReward)
+
+	if err := bc.AddBlock([]Transaction{*tx}); err != nil {
+		t.Fatalf("failed to add valid block: %v", err)
+	}
+
+	if len(bc.Blocks) != originalLength+1 {
+		t.Fatal("valid transaction should add exactly one block")
+	}
+	block := bc.Blocks[originalLength]
+	if len(block.Transactions) != 1 || !bytes.Equal(block.Transactions[0].ID, tx.ID) {
+		t.Fatal("added block should contain the supplied transaction")
+	}
+	if !bc.ValidateChain() {
+		t.Fatal("blockchain should remain valid after adding a valid transaction")
 	}
 }

@@ -16,7 +16,20 @@ func NewBlockchain() *Blockchain {
 		Blocks: []*Block{genesis},
 	}
 }
-func (bc *Blockchain) AddBlock(transactions []Transaction) {
+func (bc *Blockchain) AddBlock(transactions []Transaction) error {
+	lastBlock := bc.Blocks[len(bc.Blocks)-1]
+
+	newBlock := NewBlock(
+		lastBlock.Height+1,
+		transactions,
+		lastBlock.Hash,
+	)
+
+	return bc.AddBlockValidated(newBlock)
+}
+
+// addBlockUnchecked constructs fixtures without validating the chain.
+func (bc *Blockchain) addBlockUnchecked(transactions []Transaction) *Block {
 	lastBlock := bc.Blocks[len(bc.Blocks)-1]
 
 	newBlock := NewBlock(
@@ -26,6 +39,7 @@ func (bc *Blockchain) AddBlock(transactions []Transaction) {
 	)
 
 	bc.Blocks = append(bc.Blocks, newBlock)
+	return newBlock
 }
 
 func (bc *Blockchain) ValidateChain() bool {
