@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 )
 
@@ -1665,5 +1666,86 @@ func TestValidateWithUTXOSetAcceptsValidTransaction(t *testing.T) {
 		t.Fatal(
 			"expected valid transaction to pass UTXO set validation",
 		)
+	}
+}
+
+func TestValidateWithUTXOSetRejectsMissingUTXO(t *testing.T) {
+	alice := NewWallet()
+	bob := NewWallet()
+	funding := NewCoinbaseTransaction(alice.Address(), CoinbaseReward)
+	payment, err := NewSignedUTXOTransaction(alice, bob.Address(), 30, []Transaction{*funding})
+	if err != nil {
+		t.Fatalf("failed to create payment: %v", err)
+	}
+	utxoSet := map[string]TXOutput{
+		fmt.Sprintf("%x:%d", funding.ID, 0): funding.Outputs[0],
+	}
+	if !payment.ValidateWithUTXOSet(utxoSet) {
+		t.Fatal("payment should be valid while its UTXO exists")
+	}
+
+	delete(utxoSet, fmt.Sprintf("%x:%d", funding.ID, 0))
+	if payment.ValidateWithUTXOSet(utxoSet) {
+		t.Fatal("payment referencing a missing UTXO should be rejected")
+	}
+}
+
+func TestValidateWithUTXOSetRejectsAnotherWalletUTXO(t *testing.T) {
+	alice := NewWallet()
+	mallory := NewWallet()
+	funding := NewCoinbaseTransaction(alice.Address(), CoinbaseReward)
+	utxoSet := map[string]TXOutput{
+		fmt.Sprintf("%x:%d", funding.ID, 0): funding.Outputs[0],
+	}
+	theft := Transaction{
+		From: mallory.Address(), To: mallory.Address(), Amount: CoinbaseReward,
+		Inputs: []TXInput{
+			{TxID: funding.ID, OutIndex: 0, From: mallory.Address()},
+		},
+		Outputs: []TXOutput{{Value: CoinbaseReward, To: mallory.Address()}},
+	}
+	theft.SetID()
+	if err := theft.Sign(mallory); err != nil {
+		t.Fatalf("failed to sign theft: %v", err)
+	}
+	if !theft.ValidateID() || !theft.ValidateSenderDetails() || !theft.ValidatePaymentDetails() || !theft.VerifySignatures() || !theft.ValidateAmountsWithUTXOSet(utxoSet) {
+		t.Fatal("theft fixture should satisfy all checks except UTXO ownership")
+	}
+	if theft.VerifyInputsWithUTXOSet(utxoSet) {
+		t.Fatal("another wallet must not unlock Alice's UTXO")
+	}
+	if theft.ValidateWithUTXOSet(utxoSet) {
+		t.Fatal("transaction spending another wallet's UTXO should be rejected")
+	}
+}
+
+func TestValidateWithUTXOSetRejectsDuplicateInputs(t *testing.T) {
+	alice := NewWallet()
+	bob := NewWallet()
+	funding := NewCoinbaseTransaction(alice.Address(), CoinbaseReward)
+	utxoSet := map[string]TXOutput{
+		fmt.Sprintf("%x:%d", funding.ID, 0): funding.Outputs[0],
+	}
+	payment := Transaction{
+		From: alice.Address(), To: bob.Address(), Amount: 2 * CoinbaseReward,
+		Inputs: []TXInput{
+			{TxID: funding.ID, OutIndex: 0, From: alice.Address()},
+			{TxID: funding.ID, OutIndex: 0, From: alice.Address()},
+		},
+		Outputs: []TXOutput{{Value: 2 * CoinbaseReward, To: bob.Address()}},
+	}
+	payment.SetID()
+	if err := payment.Sign(alice); err != nil {
+		t.Fatalf("failed to sign payment: %v", err)
+	}
+	if !payment.ValidateID() || !payment.ValidateSenderDetails() || !payment.ValidatePaymentDetails() || !payment.VerifySignatures() || !payment.VerifyInputsWithUTXOSet(utxoSet) {
+		t.Fatal("duplicate-input fixture should have valid identity, signatures and ownership")
+	}
+	// Totals would balance if the same UTXO were incorrectly counted twice.
+	if payment.ValidateAmountsWithUTXOSet(utxoSet) {
+		t.Fatal("duplicate inputs must not be counted twice")
+	}
+	if payment.ValidateWithUTXOSet(utxoSet) {
+		t.Fatal("transaction containing duplicate inputs should be rejected")
 	}
 }

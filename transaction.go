@@ -514,3 +514,77 @@ func NewCoinbaseTransaction(to string, amount int) *Transaction {
 
 	return tx
 }
+
+func (tx *Transaction) VerifyInputsWithUTXOSet(utxoSet map[string]TXOutput) bool {
+	for _, input := range tx.Inputs {
+		key := fmt.Sprintf("%x:%d", input.TxID, input.OutIndex)
+		output, exists := utxoSet[key]
+		if !exists || !output.CanBeUnlockedWith(input.PublicKey) {
+			return false
+		}
+	}
+	return true
+}
+
+func (tx *Transaction) ValidateAmountsWithUTXOSet(utxoSet map[string]TXOutput) bool {
+	inputTotal := 0
+	seenInputs := make(map[string]bool)
+	for _, input := range tx.Inputs {
+		key := fmt.Sprintf("%x:%d", input.TxID, input.OutIndex)
+		if seenInputs[key] {
+			return false
+		}
+		seenInputs[key] = true
+
+		output, exists := utxoSet[key]
+		if !exists {
+			return false
+		}
+		inputTotal += output.Value
+	}
+
+	outputTotal := 0
+	for _, output := range tx.Outputs {
+		if output.Value <= 0 || output.To == "" {
+			return false
+		}
+		outputTotal += output.Value
+	}
+	return inputTotal == outputTotal
+}
+
+func (tx *Transaction) ValidateWithUTXOSet(utxoSet map[string]TXOutput) bool {
+	if !tx.ValidateID() {
+		return false
+	}
+
+	if tx.IsCoinbase() {
+		return tx.ValidateCoinbase()
+	}
+
+	if len(tx.Inputs) == 0 {
+		return false
+	}
+
+	if !tx.ValidateSenderDetails() {
+		return false
+	}
+
+	if !tx.ValidatePaymentDetails() {
+		return false
+	}
+
+	if !tx.VerifySignatures() {
+		return false
+	}
+
+	if !tx.VerifyInputsWithUTXOSet(utxoSet) {
+		return false
+	}
+
+	if !tx.ValidateAmountsWithUTXOSet(utxoSet) {
+		return false
+	}
+
+	return true
+}
