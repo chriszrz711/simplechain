@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"testing"
 )
 
@@ -1215,5 +1216,76 @@ func TestBlockchainUTXOSetMatchesRebuiltUTXOSet(t *testing.T) {
 				rebuiltOutput,
 			)
 		}
+	}
+}
+
+func TestValidateTransactionsForNextBlockWithUTXOSet(t *testing.T) {
+	for _, name := range []string{
+		"success_preserves_utxo_set",
+		"failure_preserves_utxo_set",
+		"rejects_candidate_double_spend",
+		"accepts_same_block_dependent_spend",
+		"uses_maintained_utxo_set",
+	} {
+		t.Run(name, func(t *testing.T) {
+			bc := NewBlockchain()
+			alice := NewWallet()
+			bob := NewWallet()
+			charlie := NewWallet()
+			funding := NewCoinbaseTransaction(alice.Address(), CoinbaseReward)
+			if err := bc.AddBlock([]Transaction{*funding}); err != nil {
+				t.Fatalf("failed to add funding: %v", err)
+			}
+
+			payment, err := NewSignedUTXOTransaction(alice, bob.Address(), 30, []Transaction{*funding})
+			if err != nil {
+				t.Fatalf("failed to create payment: %v", err)
+			}
+			if !payment.ValidateWithUTXOSet(bc.UTXOSet) {
+				t.Fatal("initial payment must be valid")
+			}
+			candidates := []Transaction{*payment}
+			wantValid := true
+
+			switch name {
+			case "failure_preserves_utxo_set":
+				// Fail after the first valid transaction has changed temporary state.
+				invalid := NewTransaction("Alice", "Bob", 10)
+				candidates = append(candidates, *invalid)
+				wantValid = false
+			case "rejects_candidate_double_spend":
+				second, err := NewSignedUTXOTransaction(alice, charlie.Address(), 20, []Transaction{*funding})
+				if err != nil {
+					t.Fatalf("failed to create second spend: %v", err)
+				}
+				if !second.ValidateWithUTXOSet(bc.UTXOSet) {
+					t.Fatal("second spend must be valid on its own")
+				}
+				candidates = append(candidates, *second)
+				wantValid = false
+			case "accepts_same_block_dependent_spend":
+				second, err := NewSignedUTXOTransaction(bob, charlie.Address(), 10, []Transaction{*funding, *payment})
+				if err != nil {
+					t.Fatalf("failed to create dependent spend: %v", err)
+				}
+				if second.ValidateWithUTXOSet(bc.UTXOSet) {
+					t.Fatal("dependent spend must require the first candidate's output")
+				}
+				candidates = append(candidates, *second)
+			case "uses_maintained_utxo_set":
+				// History still contains funding, but next-block validation must use the map.
+				delete(bc.UTXOSet, fmt.Sprintf("%x:%d", funding.ID, 0))
+				wantValid = false
+			}
+
+			before := maps.Clone(bc.UTXOSet)
+			originalMap := bc.UTXOSet
+			if got := bc.ValidateTransactionsForNextBlock(candidates); got != wantValid {
+				t.Errorf("expected candidate validation %t, got %t", wantValid, got)
+			}
+			if !maps.Equal(bc.UTXOSet, before) || !maps.Equal(originalMap, before) {
+				t.Fatal("candidate validation must not mutate the maintained UTXO set")
+			}
+		})
 	}
 }

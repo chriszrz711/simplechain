@@ -117,26 +117,37 @@ func (bc *Blockchain) AddBlockValidated(block *Block) error {
 	return nil
 }
 
+func cloneUTXOSet(source map[string]TXOutput) map[string]TXOutput {
+	cloned := make(map[string]TXOutput, len(source))
+	for key, output := range source {
+		cloned[key] = output
+	}
+	return cloned
+}
+
 func (bc *Blockchain) ValidateTransactionsForNextBlock(
 	transactions []Transaction,
 ) bool {
-	spentOutputs := make(map[string]bool)
-	var previousTransactions []Transaction
+	tempUTXOSet := cloneUTXOSet(bc.UTXOSet)
+	coinbaseCount := 0
 
-	for _, block := range bc.Blocks {
-		var valid bool
-		previousTransactions, valid = validateTransactions(
-			block.Transactions,
-			previousTransactions,
-			spentOutputs,
-		)
-		if !valid {
+	for txIndex := range transactions {
+		tx := &transactions[txIndex]
+		if tx.IsCoinbase() {
+			coinbaseCount++
+			if coinbaseCount > 1 || txIndex != 0 {
+				return false
+			}
+		}
+
+		if !tx.ValidateWithUTXOSet(tempUTXOSet) {
 			return false
 		}
+
+		applyTransactionsToUTXOSet(tempUTXOSet, transactions[txIndex:txIndex+1])
 	}
 
-	_, valid := validateTransactions(transactions, previousTransactions, spentOutputs)
-	return valid
+	return true
 }
 
 func validateTransactions(
