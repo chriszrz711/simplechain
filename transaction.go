@@ -273,6 +273,31 @@ func NewUTXOTransaction(
 
 	return tx, nil
 }
+func (tx *Transaction) ValidatePaymentDetails() bool {
+	if tx.To == "" {
+		return false
+	}
+
+	if tx.Amount <= 0 {
+		return false
+	}
+
+	if len(tx.Outputs) == 0 {
+		return false
+	}
+
+	paymentOutput := tx.Outputs[0]
+
+	if paymentOutput.To != tx.To {
+		return false
+	}
+
+	if paymentOutput.Value != tx.Amount {
+		return false
+	}
+
+	return true
+}
 func (tx *Transaction) VerifySignatures() bool {
 	data := tx.SigningData()
 
@@ -291,33 +316,28 @@ func (tx *Transaction) VerifySignatures() bool {
 func (tx *Transaction) IsCoinbase() bool {
 	return tx.Coinbase
 }
-func (tx *Transaction) Validate(previousTransactions []Transaction) bool {
-	if !tx.ValidateID() {
+func (tx *Transaction) ValidateSenderDetails() bool {
+	if tx.From == "" {
 		return false
 	}
 
-	if tx.IsCoinbase() {
-		return tx.ValidateCoinbase()
-	}
+	for _, input := range tx.Inputs {
+		if input.From != tx.From {
+			return false
+		}
 
-	if len(tx.Inputs) == 0 {
-		return false
-	}
+		if len(input.PublicKey) == 0 {
+			return false
+		}
 
-	if !tx.VerifySignatures() {
-		return false
-	}
-
-	if !tx.VerifyInputs(previousTransactions) {
-		return false
-	}
-
-	if !tx.ValidateAmounts(previousTransactions) {
-		return false
+		if PublicKeyToAddress(input.PublicKey) != tx.From {
+			return false
+		}
 	}
 
 	return true
 }
+
 func (tx *Transaction) ValidateAmounts(previousTransactions []Transaction) bool {
 	inputTotal := 0
 	seenInputs := make(map[string]bool)
@@ -397,6 +417,41 @@ func (tx *Transaction) ValidateCoinbase() bool {
 	}
 
 	if tx.Outputs[0].To != tx.To {
+		return false
+	}
+
+	return true
+}
+func (tx *Transaction) Validate(previousTransactions []Transaction) bool {
+	if !tx.ValidateID() {
+		return false
+	}
+
+	if tx.IsCoinbase() {
+		return tx.ValidateCoinbase()
+	}
+
+	if len(tx.Inputs) == 0 {
+		return false
+	}
+
+	if !tx.ValidateSenderDetails() {
+		return false
+	}
+
+	if !tx.ValidatePaymentDetails() {
+		return false
+	}
+
+	if !tx.VerifySignatures() {
+		return false
+	}
+
+	if !tx.VerifyInputs(previousTransactions) {
+		return false
+	}
+
+	if !tx.ValidateAmounts(previousTransactions) {
 		return false
 	}
 

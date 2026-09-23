@@ -1235,3 +1235,90 @@ func TestCoinbaseRejectsEmptyRecipient(t *testing.T) {
 		t.Fatal("coinbase transaction should reject empty recipient")
 	}
 }
+func TestTransactionRejectsAmountMismatchWithPaymentOutput(t *testing.T) {
+	aliceWallet := NewWallet()
+	bobWallet := NewWallet()
+
+	funding := NewCoinbaseTransaction(
+		aliceWallet.Address(),
+		CoinbaseReward,
+	)
+
+	spend := Transaction{
+		From:   aliceWallet.Address(),
+		To:     bobWallet.Address(),
+		Amount: 10,
+		Inputs: []TXInput{
+			{
+				TxID:     funding.ID,
+				OutIndex: 0,
+				From:     aliceWallet.Address(),
+			},
+		},
+		Outputs: []TXOutput{
+			{
+				Value: 20, // 故意与 Amount=10 不一致
+				To:    bobWallet.Address(),
+			},
+			{
+				Value: 30,
+				To:    aliceWallet.Address(),
+			},
+		},
+	}
+
+	spend.SetID()
+
+	if err := spend.Sign(aliceWallet); err != nil {
+		t.Fatalf("failed to sign transaction: %v", err)
+	}
+
+	if spend.Validate([]Transaction{*funding}) {
+		t.Fatal("transaction should reject payment output that does not match Amount")
+	}
+}
+func TestTransactionRejectsFromThatDoesNotMatchSigner(t *testing.T) {
+	aliceWallet := NewWallet()
+	bobWallet := NewWallet()
+	charlieWallet := NewWallet()
+
+	funding := NewCoinbaseTransaction(
+		aliceWallet.Address(),
+		CoinbaseReward,
+	)
+
+	spend := Transaction{
+		// 故意谎称 Bob 是发送者
+		From:   bobWallet.Address(),
+		To:     charlieWallet.Address(),
+		Amount: 10,
+		Inputs: []TXInput{
+			{
+				TxID:     funding.ID,
+				OutIndex: 0,
+				From:     bobWallet.Address(),
+			},
+		},
+		Outputs: []TXOutput{
+			{
+				Value: 10,
+				To:    charlieWallet.Address(),
+			},
+			{
+				Value: 40,
+				To:    aliceWallet.Address(),
+			},
+		},
+	}
+
+	spend.SetID()
+
+	// 但实际上是 Alice 签名
+	if err := spend.Sign(aliceWallet); err != nil {
+		t.Fatalf("failed to sign transaction: %v", err)
+	}
+
+	if spend.Validate([]Transaction{*funding}) {
+		t.Fatal("transaction should reject From that does not match the signing wallet")
+	}
+}
