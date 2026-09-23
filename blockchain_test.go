@@ -652,3 +652,34 @@ func TestTransactionRejectsNonCoinbaseWithoutInputs(t *testing.T) {
 		t.Fatal("non-coinbase transaction without inputs should be rejected")
 	}
 }
+
+func TestAddBlockValidatedAcceptsValidBlock(t *testing.T) {
+	bc := NewBlockchain()
+
+	originalLength := len(bc.Blocks)
+
+	lastBlock := bc.Blocks[len(bc.Blocks)-1]
+
+	validBlock := NewBlock(
+		lastBlock.Height+1,
+		[]Transaction{},
+		lastBlock.Hash,
+	)
+
+	err := bc.AddBlockValidated(validBlock)
+
+	if err != nil {
+		t.Fatalf(
+			"expected valid block to be accepted, got error: %v",
+			err,
+		)
+	}
+
+	if len(bc.Blocks) != originalLength+1 {
+		t.Fatalf(
+			"expected blockchain length %d, got %d",
+			originalLength+1,
+			len(bc.Blocks),
+		)
+	}
+}

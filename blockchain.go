@@ -123,3 +123,19 @@ func (bc *Blockchain) ValidateChain() bool {
 
 	return true
 }
+func (bc *Blockchain) AddBlockValidated(block *Block) error {
+	// 1. 临时把新区块加入链
+	bc.Blocks = append(bc.Blocks, block)
+
+	// 2. 验证整条链
+	if !bc.ValidateChain() {
+
+		// 3. 验证失败：撤销刚才的 append
+		bc.Blocks = bc.Blocks[:len(bc.Blocks)-1]
+
+		return fmt.Errorf("invalid block")
+	}
+
+	// 4. 验证成功：保留新区块
+	return nil
+}

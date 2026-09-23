@@ -1485,3 +1485,133 @@ func TestNewSignedUTXOTransactionRejectsNilWallet(t *testing.T) {
 		t.Fatal("transaction should be nil when wallet is nil")
 	}
 }
+func TestEndToEndSignedUTXOTransactions(t *testing.T) {
+	aliceWallet := NewWallet()
+	bobWallet := NewWallet()
+	charlieWallet := NewWallet()
+
+	blockchain := NewBlockchain()
+
+	// 1. Coinbase gives Alice 50
+	funding := NewCoinbaseTransaction(
+		aliceWallet.Address(),
+		CoinbaseReward,
+	)
+
+	blockchain.AddBlock([]Transaction{
+		*funding,
+	})
+
+	transactions := []Transaction{
+		*funding,
+	}
+
+	// 2. Alice sends 10 to Bob
+	aliceToBob, err := NewSignedUTXOTransaction(
+		aliceWallet,
+		bobWallet.Address(),
+		10,
+		transactions,
+	)
+
+	if err != nil {
+		t.Fatalf(
+			"failed to create Alice -> Bob transaction: %v",
+			err,
+		)
+	}
+
+	blockchain.AddBlock([]Transaction{
+		*aliceToBob,
+	})
+
+	transactions = append(
+		transactions,
+		*aliceToBob,
+	)
+
+	// 3. Bob sends 5 to Charlie
+	bobToCharlie, err := NewSignedUTXOTransaction(
+		bobWallet,
+		charlieWallet.Address(),
+		5,
+		transactions,
+	)
+
+	if err != nil {
+		t.Fatalf(
+			"failed to create Bob -> Charlie transaction: %v",
+			err,
+		)
+	}
+
+	blockchain.AddBlock([]Transaction{
+		*bobToCharlie,
+	})
+
+	transactions = append(
+		transactions,
+		*bobToCharlie,
+	)
+
+	// 4. Entire blockchain should be valid
+	if !blockchain.ValidateChain() {
+		t.Fatal("expected complete blockchain to be valid")
+	}
+
+	// 5. Check final balances
+	aliceBalance := GetBalance(
+		transactions,
+		aliceWallet.Address(),
+	)
+
+	bobBalance := GetBalance(
+		transactions,
+		bobWallet.Address(),
+	)
+
+	charlieBalance := GetBalance(
+		transactions,
+		charlieWallet.Address(),
+	)
+
+	if aliceBalance != 40 {
+		t.Fatalf(
+			"expected Alice balance 40, got %d",
+			aliceBalance,
+		)
+	}
+
+	if bobBalance != 5 {
+		t.Fatalf(
+			"expected Bob balance 5, got %d",
+			bobBalance,
+		)
+	}
+
+	if charlieBalance != 5 {
+		t.Fatalf(
+			"expected Charlie balance 5, got %d",
+			charlieBalance,
+		)
+	}
+}
+func TestAddBlockValidatedRejectsInvalidBlock(t *testing.T) {
+	bc := NewBlockchain()
+
+	originalLength := len(bc.Blocks)
+
+	badBlock := *bc.Blocks[0]
+
+	badBlock.PrevHash = []byte("wrong previous hash")
+
+	err := bc.AddBlockValidated(&badBlock)
+
+	if err == nil {
+		t.Fatal("expected invalid block to be rejected")
+	}
+
+	if len(bc.Blocks) != originalLength {
+		t.Fatal("invalid block should not be added to blockchain")
+	}
+}
