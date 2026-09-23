@@ -735,3 +735,80 @@ func TestAddBlockAcceptsValidTransactions(t *testing.T) {
 		t.Fatal("blockchain should remain valid after adding a valid transaction")
 	}
 }
+func TestValidateNextBlockAcceptsValidBlock(t *testing.T) {
+	bc := NewBlockchain()
+
+	lastBlock := bc.Blocks[len(bc.Blocks)-1]
+
+	candidate := NewBlock(
+		lastBlock.Height+1,
+		[]Transaction{},
+		lastBlock.Hash,
+	)
+
+	if !bc.ValidateNextBlock(candidate) {
+		t.Fatal("expected valid next block to be accepted")
+	}
+}
+func TestValidateNextBlockRejectsWrongHeight(t *testing.T) {
+	bc := NewBlockchain()
+
+	lastBlock := bc.Blocks[len(bc.Blocks)-1]
+
+	candidate := NewBlock(
+		lastBlock.Height+1,
+		[]Transaction{},
+		lastBlock.Hash,
+	)
+
+	// 故意篡改 Height
+	candidate.Height = lastBlock.Height + 2
+
+	if bc.ValidateNextBlock(candidate) {
+		t.Fatal("expected block with wrong height to be rejected")
+	}
+}
+func TestValidateNextBlockRejectsWrongPrevHash(t *testing.T) {
+	bc := NewBlockchain()
+
+	lastBlock := bc.Blocks[len(bc.Blocks)-1]
+
+	candidate := NewBlock(
+		lastBlock.Height+1,
+		[]Transaction{},
+		lastBlock.Hash,
+	)
+
+	// 故意让它指向错误的前一个 Hash
+	candidate.PrevHash = []byte("wrong previous hash")
+
+	if bc.ValidateNextBlock(candidate) {
+		t.Fatal("expected block with wrong previous hash to be rejected")
+	}
+}
+func TestValidateNextBlockRejectsInvalidPoW(t *testing.T) {
+	bc := NewBlockchain()
+
+	lastBlock := bc.Blocks[len(bc.Blocks)-1]
+
+	candidate := NewBlock(
+		lastBlock.Height+1,
+		[]Transaction{},
+		lastBlock.Hash,
+	)
+
+	// 不断修改 Nonce，直到确认 PoW 无效
+	for {
+		candidate.Nonce++
+
+		pow := NewProofOfWork(candidate)
+
+		if !pow.Validate() {
+			break
+		}
+	}
+
+	if bc.ValidateNextBlock(candidate) {
+		t.Fatal("expected block with invalid proof of work to be rejected")
+	}
+}
