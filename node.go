@@ -55,5 +55,6 @@ func (n *Node) Handler() http.Handler {
 	mux.HandleFunc("/status", n.StatusHandler)
 	mux.HandleFunc("/transaction", n.TransactionHandler)
 	mux.HandleFunc("/block", n.BlockHandler)
+	mux.HandleFunc("/blocks", n.BlocksHandler)
 	return mux
 }
