@@ -140,7 +140,7 @@ func TestNewNodeCopiesPeers(t *testing.T) {
 	}
 }
 
-func TestNodeHandlerOnlyRegistersStatus(t *testing.T) {
+func TestNodeHandlerRejectsUnknownRoutes(t *testing.T) {
 	node := NewNode(NewBlockchain(), NewMempool(), "Miner", nil)
 	for _, path := range []string{"/", "/transactions", "/blocks", "/status/extra"} {
 		recorder := httptest.NewRecorder()
