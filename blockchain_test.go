@@ -877,13 +877,10 @@ func TestBuildUTXOSetRemovesSpentOutput(t *testing.T) {
 	}
 
 	// 2. Alice 花 30 给 Bob
-	payment, err := NewSignedUTXOTransaction(
+	payment, err := bc.NewSignedTransaction(
 		alice,
 		bob.Address(),
 		30,
-		[]Transaction{
-			*coinbase,
-		},
 	)
 	if err != nil {
 		t.Fatalf("failed to create payment: %v", err)
@@ -1021,13 +1018,10 @@ func TestBlockchainUTXOSetUpdatesAfterSpend(t *testing.T) {
 	}
 
 	// 2. Alice 花 30 给 Bob
-	payment, err := NewSignedUTXOTransaction(
+	payment, err := bc.NewSignedTransaction(
 		alice,
 		bob.Address(),
 		30,
-		[]Transaction{
-			*coinbase,
-		},
 	)
 	if err != nil {
 		t.Fatalf(
@@ -1135,13 +1129,10 @@ func TestBlockchainUTXOSetMatchesRebuiltUTXOSet(t *testing.T) {
 	}
 
 	// 2. Alice 给 Bob 30，Alice 找零 20
-	payment1, err := NewSignedUTXOTransaction(
+	payment1, err := bc.NewSignedTransaction(
 		alice,
 		bob.Address(),
 		30,
-		[]Transaction{
-			*coinbase,
-		},
 	)
 	if err != nil {
 		t.Fatalf(
@@ -1160,14 +1151,10 @@ func TestBlockchainUTXOSetMatchesRebuiltUTXOSet(t *testing.T) {
 	}
 
 	// 3. Bob 再给 Charlie 10
-	payment2, err := NewSignedUTXOTransaction(
+	payment2, err := bc.NewSignedTransaction(
 		bob,
 		charlie.Address(),
 		10,
-		[]Transaction{
-			*coinbase,
-			*payment1,
-		},
 	)
 	if err != nil {
 		t.Fatalf(
@@ -1237,7 +1224,7 @@ func TestValidateTransactionsForNextBlockWithUTXOSet(t *testing.T) {
 				t.Fatalf("failed to add funding: %v", err)
 			}
 
-			payment, err := NewSignedUTXOTransaction(alice, bob.Address(), 30, []Transaction{*funding})
+			payment, err := bc.NewSignedTransaction(alice, bob.Address(), 30)
 			if err != nil {
 				t.Fatalf("failed to create payment: %v", err)
 			}
@@ -1254,7 +1241,7 @@ func TestValidateTransactionsForNextBlockWithUTXOSet(t *testing.T) {
 				candidates = append(candidates, *invalid)
 				wantValid = false
 			case "rejects_candidate_double_spend":
-				second, err := NewSignedUTXOTransaction(alice, charlie.Address(), 20, []Transaction{*funding})
+				second, err := bc.NewSignedTransaction(alice, charlie.Address(), 20)
 				if err != nil {
 					t.Fatalf("failed to create second spend: %v", err)
 				}
@@ -1264,7 +1251,9 @@ func TestValidateTransactionsForNextBlockWithUTXOSet(t *testing.T) {
 				candidates = append(candidates, *second)
 				wantValid = false
 			case "accepts_same_block_dependent_spend":
-				second, err := NewSignedUTXOTransaction(bob, charlie.Address(), 10, []Transaction{*funding, *payment})
+				candidateSet := cloneUTXOSet(bc.UTXOSet)
+				applyTransactionsToUTXOSet(candidateSet, []Transaction{*payment})
+				second, err := NewSignedUTXOTransactionFromSet(bob, charlie.Address(), 10, candidateSet)
 				if err != nil {
 					t.Fatalf("failed to create dependent spend: %v", err)
 				}

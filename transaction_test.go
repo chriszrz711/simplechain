@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"testing"
 )
 
@@ -1505,16 +1506,11 @@ func TestEndToEndSignedUTXOTransactions(t *testing.T) {
 		t.Fatalf("failed to add valid block: %v", err)
 	}
 
-	transactions := []Transaction{
-		*funding,
-	}
-
 	// 2. Alice sends 10 to Bob
-	aliceToBob, err := NewSignedUTXOTransaction(
+	aliceToBob, err := blockchain.NewSignedTransaction(
 		aliceWallet,
 		bobWallet.Address(),
 		10,
-		transactions,
 	)
 
 	if err != nil {
@@ -1530,17 +1526,11 @@ func TestEndToEndSignedUTXOTransactions(t *testing.T) {
 		t.Fatalf("failed to add valid block: %v", err)
 	}
 
-	transactions = append(
-		transactions,
-		*aliceToBob,
-	)
-
 	// 3. Bob sends 5 to Charlie
-	bobToCharlie, err := NewSignedUTXOTransaction(
+	bobToCharlie, err := blockchain.NewSignedTransaction(
 		bobWallet,
 		charlieWallet.Address(),
 		5,
-		transactions,
 	)
 
 	if err != nil {
@@ -1556,29 +1546,21 @@ func TestEndToEndSignedUTXOTransactions(t *testing.T) {
 		t.Fatalf("failed to add valid block: %v", err)
 	}
 
-	transactions = append(
-		transactions,
-		*bobToCharlie,
-	)
-
 	// 4. Entire blockchain should be valid
 	if !blockchain.ValidateChain() {
 		t.Fatal("expected complete blockchain to be valid")
 	}
 
 	// 5. Check final balances
-	aliceBalance := GetBalance(
-		transactions,
+	aliceBalance := blockchain.GetBalance(
 		aliceWallet.Address(),
 	)
 
-	bobBalance := GetBalance(
-		transactions,
+	bobBalance := blockchain.GetBalance(
 		bobWallet.Address(),
 	)
 
-	charlieBalance := GetBalance(
-		transactions,
+	charlieBalance := blockchain.GetBalance(
 		charlieWallet.Address(),
 	)
 
@@ -1602,7 +1584,11 @@ func TestEndToEndSignedUTXOTransactions(t *testing.T) {
 			charlieBalance,
 		)
 	}
+	if !maps.Equal(blockchain.UTXOSet, blockchain.BuildUTXOSet()) {
+		t.Fatal("cached UTXO set must match historical rebuild")
+	}
 }
+
 func TestAddBlockValidatedRejectsInvalidBlock(t *testing.T) {
 	bc := NewBlockchain()
 
@@ -1643,14 +1629,11 @@ func TestValidateWithUTXOSetAcceptsValidTransaction(t *testing.T) {
 		)
 	}
 
-	// 先继续使用现有方式创建并签名交易
-	payment, err := NewSignedUTXOTransaction(
+	// 使用维护的 UTXOSet 创建并签名交易
+	payment, err := bc.NewSignedTransaction(
 		alice,
 		bob.Address(),
 		30,
-		[]Transaction{
-			*coinbase,
-		},
 	)
 	if err != nil {
 		t.Fatalf(
@@ -1673,12 +1656,10 @@ func TestValidateWithUTXOSetRejectsMissingUTXO(t *testing.T) {
 	alice := NewWallet()
 	bob := NewWallet()
 	funding := NewCoinbaseTransaction(alice.Address(), CoinbaseReward)
-	payment, err := NewSignedUTXOTransaction(alice, bob.Address(), 30, []Transaction{*funding})
+	utxoSet := map[string]TXOutput{fmt.Sprintf("%x:%d", funding.ID, 0): funding.Outputs[0]}
+	payment, err := NewSignedUTXOTransactionFromSet(alice, bob.Address(), 30, utxoSet)
 	if err != nil {
 		t.Fatalf("failed to create payment: %v", err)
-	}
-	utxoSet := map[string]TXOutput{
-		fmt.Sprintf("%x:%d", funding.ID, 0): funding.Outputs[0],
 	}
 	if !payment.ValidateWithUTXOSet(utxoSet) {
 		t.Fatal("payment should be valid while its UTXO exists")
@@ -1747,5 +1728,126 @@ func TestValidateWithUTXOSetRejectsDuplicateInputs(t *testing.T) {
 	}
 	if payment.ValidateWithUTXOSet(utxoSet) {
 		t.Fatal("transaction containing duplicate inputs should be rejected")
+	}
+}
+func TestFindSpendableUTXOFromSet(t *testing.T) {
+	alice := NewWallet()
+
+	txID := []byte{0x01, 0x02, 0x03}
+
+	utxoSet := map[string]TXOutput{
+		fmt.Sprintf("%x:%d", txID, 0): {
+			Value: 30,
+			To:    alice.Address(),
+		},
+		fmt.Sprintf("%x:%d", txID, 1): {
+			Value: 20,
+			To:    alice.Address(),
+		},
+	}
+
+	total, selected := FindSpendableUTXOFromSet(
+		utxoSet,
+		alice.Address(),
+		40,
+	)
+
+	if total != 50 {
+		t.Fatalf(
+			"expected selected total 50, got %d",
+			total,
+		)
+	}
+
+	if len(selected) != 2 {
+		t.Fatalf(
+			"expected 2 selected UTXOs, got %d",
+			len(selected),
+		)
+	}
+}
+func TestNewUTXOTransactionFromSet(t *testing.T) {
+	alice := NewWallet()
+	bob := NewWallet()
+
+	txID := []byte{0x01, 0x02, 0x03}
+
+	utxoSet := map[string]TXOutput{
+		fmt.Sprintf("%x:%d", txID, 0): {
+			Value: 50,
+			To:    alice.Address(),
+		},
+	}
+
+	tx, err := NewUTXOTransactionFromSet(
+		alice.Address(),
+		bob.Address(),
+		30,
+		utxoSet,
+	)
+
+	if err != nil {
+		t.Fatalf(
+			"failed to create transaction: %v",
+			err,
+		)
+	}
+
+	// 应该使用刚才的 50 UTXO
+	if len(tx.Inputs) != 1 {
+		t.Fatalf(
+			"expected 1 input, got %d",
+			len(tx.Inputs),
+		)
+	}
+
+	if !bytes.Equal(tx.Inputs[0].TxID, txID) {
+		t.Fatal("input references wrong transaction ID")
+	}
+
+	if tx.Inputs[0].OutIndex != 0 {
+		t.Fatalf(
+			"expected input output index 0, got %d",
+			tx.Inputs[0].OutIndex,
+		)
+	}
+
+	if tx.Inputs[0].From != alice.Address() {
+		t.Fatal("expected input to belong to Alice")
+	}
+
+	// Bob 收到 30
+	if len(tx.Outputs) != 2 {
+		t.Fatalf(
+			"expected 2 outputs, got %d",
+			len(tx.Outputs),
+		)
+	}
+
+	if tx.Outputs[0].Value != 30 {
+		t.Fatalf(
+			"expected Bob payment 30, got %d",
+			tx.Outputs[0].Value,
+		)
+	}
+
+	if tx.Outputs[0].To != bob.Address() {
+		t.Fatal("expected first output to belong to Bob")
+	}
+
+	// Alice 找零 20
+	if tx.Outputs[1].Value != 20 {
+		t.Fatalf(
+			"expected Alice change 20, got %d",
+			tx.Outputs[1].Value,
+		)
+	}
+
+	if tx.Outputs[1].To != alice.Address() {
+		t.Fatal("expected change output to belong to Alice")
+	}
+
+	if !tx.ValidateID() {
+		t.Fatal("expected transaction ID to be valid")
 	}
 }

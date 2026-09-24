@@ -318,3 +318,24 @@ func (bc *Blockchain) updateUTXOSet(
 		transactions,
 	)
 }
+
+// NewSignedTransaction creates a payment from the maintained UTXO set.
+// It does not reserve or consume outputs; adding an accepted block does that.
+func (bc *Blockchain) NewSignedTransaction(
+	wallet *Wallet,
+	to string,
+	amount int,
+) (*Transaction, error) {
+	return NewSignedUTXOTransactionFromSet(wallet, to, amount, bc.UTXOSet)
+}
+
+// GetBalance returns the owner's balance from the maintained UTXO set.
+func (bc *Blockchain) GetBalance(owner string) int {
+	balance := 0
+	for _, output := range bc.UTXOSet {
+		if output.To == owner {
+			balance += output.Value
+		}
+	}
+	return balance
+}

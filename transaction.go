@@ -3,7 +3,11 @@ package main
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
 )
 
 const CoinbaseReward = 50
@@ -587,4 +591,168 @@ func (tx *Transaction) ValidateWithUTXOSet(utxoSet map[string]TXOutput) bool {
 	}
 
 	return true
+}
+func FindSpendableUTXOFromSet(
+	utxoSet map[string]TXOutput,
+	owner string,
+	amount int,
+) (int, []UTXO) {
+
+	// map 遍历顺序不固定，所以先把 key 拿出来排序
+	keys := make([]string, 0, len(utxoSet))
+
+	for key := range utxoSet {
+		keys = append(keys, key)
+	}
+
+	sort.Strings(keys)
+
+	total := 0
+	var selected []UTXO
+
+	for _, key := range keys {
+		output := utxoSet[key]
+
+		// 只找属于 owner 的 UTXO
+		if output.To != owner {
+			continue
+		}
+
+		txID, outIndex, ok := parseUTXOKey(key)
+		if !ok {
+			continue
+		}
+
+		selected = append(selected, UTXO{
+			TxID:     txID,
+			OutIndex: outIndex,
+			Output:   output,
+		})
+
+		total += output.Value
+
+		if total >= amount {
+			break
+		}
+	}
+
+	return total, selected
+}
+func parseUTXOKey(key string) ([]byte, int, bool) {
+	separator := strings.LastIndex(key, ":")
+	if separator == -1 {
+		return nil, 0, false
+	}
+
+	txIDHex := key[:separator]
+	outIndexText := key[separator+1:]
+
+	txID, err := hex.DecodeString(txIDHex)
+	if err != nil {
+		return nil, 0, false
+	}
+
+	outIndex, err := strconv.Atoi(outIndexText)
+	if err != nil {
+		return nil, 0, false
+	}
+
+	return txID, outIndex, true
+}
+
+func NewUTXOTransactionFromSet(
+	from string,
+	to string,
+	amount int,
+	utxoSet map[string]TXOutput,
+) (*Transaction, error) {
+
+	if amount <= 0 {
+		return nil, fmt.Errorf(
+			"amount must be positive",
+		)
+	}
+	if to == "" {
+		return nil, fmt.Errorf(
+			"recipient cannot be empty",
+		)
+	}
+
+	total, selected := FindSpendableUTXOFromSet(
+		utxoSet,
+		from,
+		amount,
+	)
+
+	if total < amount {
+		return nil, fmt.Errorf(
+			"insufficient funds: have %d, need %d",
+			total,
+			amount,
+		)
+	}
+
+	var inputs []TXInput
+
+	for _, utxo := range selected {
+		inputs = append(inputs, TXInput{
+			TxID:     utxo.TxID,
+			OutIndex: utxo.OutIndex,
+			From:     from,
+		})
+	}
+
+	outputs := []TXOutput{
+		{
+			Value: amount,
+			To:    to,
+		},
+	}
+
+	if total > amount {
+		outputs = append(outputs, TXOutput{
+			Value: total - amount,
+			To:    from,
+		})
+	}
+
+	tx := &Transaction{
+		From:    from,
+		To:      to,
+		Amount:  amount,
+		Inputs:  inputs,
+		Outputs: outputs,
+	}
+
+	tx.SetID()
+
+	return tx, nil
+}
+
+func NewSignedUTXOTransactionFromSet(
+	wallet *Wallet,
+	to string,
+	amount int,
+	utxoSet map[string]TXOutput,
+) (*Transaction, error) {
+
+	if wallet == nil {
+		return nil, fmt.Errorf("wallet cannot be nil")
+	}
+
+	tx, err := NewUTXOTransactionFromSet(
+		wallet.Address(),
+		to,
+		amount,
+		utxoSet,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Sign(wallet); err != nil {
+		return nil, err
+	}
+
+	return tx, nil
 }
