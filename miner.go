@@ -22,7 +22,7 @@ func (bc *Blockchain) MineBlock(mempool *Mempool, minerAddress string) (*Block, 
 
 	mempool.Revalidate(bc)
 	pending := mempool.TransactionsForBlock()
-	coinbase := NewCoinbaseTransaction(minerAddress, CoinbaseReward)
+	coinbase := NewCoinbaseTransactionForHeight(minerAddress, CoinbaseReward, bc.Blocks[len(bc.Blocks)-1].Height+1)
 	transactions := make([]Transaction, 0, len(pending)+1)
 	transactions = append(transactions, *coinbase)
 	transactions = append(transactions, pending...)

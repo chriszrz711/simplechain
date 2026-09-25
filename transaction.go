@@ -13,13 +13,14 @@ import (
 const CoinbaseReward = 50
 
 type Transaction struct {
-	ID       []byte
-	From     string
-	To       string
-	Amount   int
-	Coinbase bool
-	Inputs   []TXInput
-	Outputs  []TXOutput
+	ID             []byte
+	From           string
+	To             string
+	Amount         int
+	Coinbase       bool
+	CoinbaseHeight uint64
+	Inputs         []TXInput
+	Outputs        []TXOutput
 }
 type TXOutput struct {
 	Value int
@@ -107,6 +108,10 @@ func (tx *Transaction) SigningData() []byte {
 		tx.Amount,
 		tx.Coinbase,
 	)
+
+	if tx.IsCoinbase() {
+		fmt.Fprintf(&data, "height:%d|", tx.CoinbaseHeight)
+	}
 
 	for _, in := range tx.Inputs {
 		fmt.Fprintf(
@@ -501,11 +506,19 @@ func (tx *Transaction) Validate(previousTransactions []Transaction) bool {
 
 	return true
 }
+
+// NewCoinbaseTransaction constructs a reward for the first non-genesis block.
+// For later blocks, use NewCoinbaseTransactionForHeight.
 func NewCoinbaseTransaction(to string, amount int) *Transaction {
+	return NewCoinbaseTransactionForHeight(to, amount, 1)
+}
+
+func NewCoinbaseTransactionForHeight(to string, amount int, height uint64) *Transaction {
 	tx := &Transaction{
-		To:       to,
-		Amount:   amount,
-		Coinbase: true,
+		To:             to,
+		Amount:         amount,
+		Coinbase:       true,
+		CoinbaseHeight: height,
 		Outputs: []TXOutput{
 			{
 				Value: amount,

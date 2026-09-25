@@ -102,7 +102,7 @@ func TestValidateChainReturnsTrueForValidChain(t *testing.T) {
 	blockchain := NewBlockchain()
 
 	tx1 := NewCoinbaseTransaction("Alice", CoinbaseReward)
-	tx2 := NewCoinbaseTransaction("Bob", CoinbaseReward)
+	tx2 := NewCoinbaseTransactionForHeight("Bob", CoinbaseReward, 2)
 	if err := blockchain.AddBlock([]Transaction{*tx1}); err != nil {
 		t.Fatalf("failed to add valid block: %v", err)
 	}
@@ -1276,5 +1276,64 @@ func TestValidateTransactionsForNextBlockWithUTXOSet(t *testing.T) {
 				t.Fatal("candidate validation must not mutate the maintained UTXO set")
 			}
 		})
+	}
+}
+
+func TestValidateChainRejectsReminedNoncanonicalGenesis(t *testing.T) {
+	if !NewBlockchain().ValidateChain() {
+		t.Fatal("canonical genesis must be valid")
+	}
+	for _, change := range []string{"timestamp", "transactions"} {
+		t.Run(change, func(t *testing.T) {
+			bc := NewBlockchain()
+			genesis := bc.Blocks[0]
+			if change == "timestamp" {
+				genesis.Timestamp++
+			} else {
+				genesis.Transactions = []Transaction{*NewCoinbaseTransaction("Miner", CoinbaseReward)}
+			}
+			genesis.Nonce, genesis.Hash = NewProofOfWork(genesis).Run()
+			if !NewProofOfWork(genesis).Validate() {
+				t.Fatal("fixture must have valid PoW")
+			}
+			if bc.ValidateChain() {
+				t.Fatal("noncanonical genesis must be rejected even with valid PoW")
+			}
+		})
+	}
+}
+
+func TestValidateChainRejectsNilBlock(t *testing.T) {
+	for _, blocks := range [][]*Block{{nil}, {NewGenesisBlock(), nil}} {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("ValidateChain panicked: %v", r)
+				}
+			}()
+			bc := &Blockchain{Blocks: blocks}
+			if bc.ValidateChain() {
+				t.Error("nil block must be rejected")
+			}
+		}()
+	}
+}
+
+func TestValidateChainRejectsReusedCoinbaseInLaterBlock(t *testing.T) {
+	bc := NewBlockchain()
+	tx := NewCoinbaseTransaction("Miner", CoinbaseReward)
+	if err := bc.AddBlock([]Transaction{*tx}); err != nil {
+		t.Fatal(err)
+	}
+	if bc.ValidateTransactionsForNextBlock([]Transaction{*tx}) {
+		t.Error("coinbase for earlier height must be rejected")
+	}
+	block := NewBlock(2, []Transaction{*tx}, bc.Blocks[1].Hash)
+	if bc.ValidateNextBlock(block) {
+		t.Error("received block must reject reused coinbase")
+	}
+	bc.addBlockUnchecked([]Transaction{*tx})
+	if bc.ValidateChain() {
+		t.Error("history must reject reused coinbase")
 	}
 }

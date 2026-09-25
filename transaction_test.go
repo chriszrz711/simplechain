@@ -1851,3 +1851,26 @@ func TestNewUTXOTransactionFromSet(t *testing.T) {
 		t.Fatal("expected transaction ID to be valid")
 	}
 }
+
+func TestCoinbaseHeightDeterminesID(t *testing.T) {
+	first := NewCoinbaseTransactionForHeight("Miner", CoinbaseReward, 1)
+	repeated := NewCoinbaseTransactionForHeight("Miner", CoinbaseReward, 1)
+	second := NewCoinbaseTransactionForHeight("Miner", CoinbaseReward, 2)
+	if !bytes.Equal(first.ID, repeated.ID) {
+		t.Fatal("same coinbase data and height must yield the same ID")
+	}
+	if bytes.Equal(first.ID, second.ID) {
+		t.Fatal("different heights must yield different IDs")
+	}
+	if !first.Validate(nil) || !second.ValidateWithUTXOSet(nil) {
+		t.Fatal("height-specific coinbase must validate")
+	}
+	first.CoinbaseHeight++
+	if first.ValidateID() {
+		t.Fatal("changing coinbase height must invalidate ID")
+	}
+	badReward := NewCoinbaseTransactionForHeight("Miner", CoinbaseReward+1, 2)
+	if badReward.ValidateCoinbase() {
+		t.Fatal("incorrect reward must still be rejected")
+	}
+}

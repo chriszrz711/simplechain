@@ -65,18 +65,30 @@ func (bc *Blockchain) addBlockUnchecked(
 }
 
 func (bc *Blockchain) ValidateChain() bool {
-	if len(bc.Blocks) == 0 {
+	if bc == nil || len(bc.Blocks) == 0 {
 		return false
 	}
+	canonicalGenesis := NewGenesisBlock()
 	spentOutputs := make(map[string]bool)
 	var previousTransactions []Transaction
 
 	for i, currentBlock := range bc.Blocks {
+		if currentBlock == nil {
+			return false
+		}
 		if currentBlock.Height != uint64(i) {
 			return false
 		}
 
-		if i == 0 && len(currentBlock.PrevHash) != 0 {
+		if i == 0 {
+			if currentBlock.Timestamp != canonicalGenesis.Timestamp ||
+				len(currentBlock.PrevHash) != 0 || len(currentBlock.Transactions) != 0 ||
+				currentBlock.Nonce != canonicalGenesis.Nonce ||
+				!bytes.Equal(currentBlock.Hash, canonicalGenesis.Hash) {
+				return false
+			}
+		}
+		if !coinbaseHeightMatches(currentBlock.Transactions, currentBlock.Height) {
 			return false
 		}
 
@@ -128,6 +140,12 @@ func cloneUTXOSet(source map[string]TXOutput) map[string]TXOutput {
 func (bc *Blockchain) ValidateTransactionsForNextBlock(
 	transactions []Transaction,
 ) bool {
+	if bc == nil || len(bc.Blocks) == 0 || bc.Blocks[len(bc.Blocks)-1] == nil {
+		return false
+	}
+	if !coinbaseHeightMatches(transactions, bc.Blocks[len(bc.Blocks)-1].Height+1) {
+		return false
+	}
 	tempUTXOSet := cloneUTXOSet(bc.UTXOSet)
 	coinbaseCount := 0
 
@@ -338,4 +356,14 @@ func (bc *Blockchain) GetBalance(owner string) int {
 		}
 	}
 	return balance
+}
+
+// coinbaseHeightMatches binds each reward to its containing block.
+func coinbaseHeightMatches(transactions []Transaction, height uint64) bool {
+	for _, tx := range transactions {
+		if tx.IsCoinbase() && tx.CoinbaseHeight != height {
+			return false
+		}
+	}
+	return true
 }

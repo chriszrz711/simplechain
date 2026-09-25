@@ -73,7 +73,7 @@ func mempoolFixture(t *testing.T) (*Blockchain, *Wallet, *Wallet, *Transaction, 
 	bc := NewBlockchain()
 	alice, bob := NewWallet(), NewWallet()
 	for _, wallet := range []*Wallet{alice, bob} {
-		if err := bc.AddBlock([]Transaction{*NewCoinbaseTransaction(wallet.Address(), CoinbaseReward)}); err != nil {
+		if err := bc.AddBlock([]Transaction{*NewCoinbaseTransactionForHeight(wallet.Address(), CoinbaseReward, uint64(len(bc.Blocks)))}); err != nil {
 			t.Fatal(err)
 		}
 	}

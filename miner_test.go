@@ -214,3 +214,29 @@ func TestMineBlockRewardAddsToExistingBalance(t *testing.T) {
 		t.Fatal("chain and cached UTXOs must remain consistent")
 	}
 }
+
+func TestMineBlockSameMinerKeepsDistinctCoinbaseUTXOs(t *testing.T) {
+	bc := NewBlockchain()
+	mp := NewMempool()
+	miner := NewWallet().Address()
+	first, err := bc.MineBlock(mp, miner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := bc.MineBlock(mp, miner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(first.Transactions[0].ID, second.Transactions[0].ID) {
+		t.Error("coinbase IDs must differ between block heights")
+	}
+	if got := bc.GetBalance(miner); got != 2*CoinbaseReward {
+		t.Errorf("miner balance = %d, want %d", got, 2*CoinbaseReward)
+	}
+	if !bc.ValidateChain() {
+		t.Error("mined chain must remain valid")
+	}
+	if !maps.Equal(bc.UTXOSet, bc.BuildUTXOSet()) {
+		t.Error("cached UTXOs must match history")
+	}
+}

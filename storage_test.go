@@ -241,3 +241,18 @@ func TestSaveToFileReplacesExistingBlockchain(t *testing.T) {
 		)
 	}
 }
+
+func TestLoadBlockchainRejectsNullBlock(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "null-block.json")
+	if err := os.WriteFile(path, []byte(`{"blocks":[null]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("LoadBlockchainFromFile panicked: %v", r)
+		}
+	}()
+	if _, err := LoadBlockchainFromFile(path); err == nil {
+		t.Fatal("null block must return an error")
+	}
+}

@@ -15,7 +15,7 @@ func syncSource(t *testing.T, height int) *Node {
 	t.Helper()
 	n := NewNode(NewBlockchain(), NewMempool(), "", nil)
 	for i := 1; i <= height; i++ {
-		if err := n.Blockchain.AddBlock([]Transaction{*NewCoinbaseTransaction(fmt.Sprintf("miner-%d", i), CoinbaseReward)}); err != nil {
+		if err := n.Blockchain.AddBlock([]Transaction{*NewCoinbaseTransactionForHeight(fmt.Sprintf("miner-%d", i), CoinbaseReward, uint64(i))}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -223,7 +223,7 @@ func TestSyncCleansConfirmedAndConflictingMempool(t *testing.T) {
 	source := NewNode(NewBlockchain(), NewMempool(), "Miner", nil)
 	alice, bob := NewWallet(), NewWallet()
 	for _, wallet := range []*Wallet{alice, bob} {
-		if err := source.Blockchain.AddBlock([]Transaction{*NewCoinbaseTransaction(wallet.Address(), CoinbaseReward)}); err != nil {
+		if err := source.Blockchain.AddBlock([]Transaction{*NewCoinbaseTransactionForHeight(wallet.Address(), CoinbaseReward, uint64(len(source.Blockchain.Blocks)))}); err != nil {
 			t.Fatal(err)
 		}
 	}
