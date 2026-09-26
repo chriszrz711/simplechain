@@ -5,3 +5,28 @@
 ._*
 .Spotlight-V100/
 .Trashes/
+
+# Wallet / private key data
+wallet.json
+wallet-*.json
+*.wallet
+wallets/
+keys/
+
+# Blockchain / runtime data
+blockchain.json
+chain.json
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary / backup files
+*.tmp
+*.bak
+*.swp
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
