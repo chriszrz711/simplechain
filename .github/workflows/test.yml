@@ -1,0 +1,30 @@
+name: Go Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Go version
+        run: go version
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test -count=1 ./...
