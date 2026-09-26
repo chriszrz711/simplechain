@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"sort"
 )
@@ -52,7 +51,7 @@ func (mp *Mempool) AddTransaction(bc *Blockchain, tx *Transaction) error {
 	if mp.Transactions == nil {
 		mp.Transactions = make(map[string]Transaction)
 	}
-	mp.Transactions[key] = cloneMempoolTransaction(*tx)
+	mp.Transactions[key] = cloneTransaction(*tx)
 	return nil
 }
 
@@ -84,7 +83,7 @@ func (mp *Mempool) TransactionsForBlock() []Transaction {
 
 	transactions := make([]Transaction, 0, len(keys))
 	for _, key := range keys {
-		transactions = append(transactions, cloneMempoolTransaction(mp.Transactions[key]))
+		transactions = append(transactions, cloneTransaction(mp.Transactions[key]))
 	}
 	return transactions
 }
@@ -128,16 +127,4 @@ func reserveMempoolInputs(tx *Transaction, reserved map[string]bool) bool {
 		reserved[fmt.Sprintf("%x:%d", input.TxID, input.OutIndex)] = true
 	}
 	return true
-}
-
-func cloneMempoolTransaction(tx Transaction) Transaction {
-	tx.ID = bytes.Clone(tx.ID)
-	tx.Inputs = append([]TXInput(nil), tx.Inputs...)
-	for i := range tx.Inputs {
-		tx.Inputs[i].TxID = bytes.Clone(tx.Inputs[i].TxID)
-		tx.Inputs[i].Signature = bytes.Clone(tx.Inputs[i].Signature)
-		tx.Inputs[i].PublicKey = bytes.Clone(tx.Inputs[i].PublicKey)
-	}
-	tx.Outputs = append([]TXOutput(nil), tx.Outputs...)
-	return tx
 }

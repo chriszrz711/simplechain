@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -43,24 +42,11 @@ func (n *Node) BlocksHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if block.Height >= fromHeight {
-			blocks = append(blocks, cloneSyncBlock(block))
+			blocks = append(blocks, *cloneBlock(block))
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(BlocksResponse{Blocks: blocks})
-}
-
-func cloneSyncBlock(block *Block) Block {
-	cloned := *block
-	cloned.Hash = bytes.Clone(block.Hash)
-	cloned.PrevHash = bytes.Clone(block.PrevHash)
-	if block.Transactions != nil {
-		cloned.Transactions = make([]Transaction, len(block.Transactions))
-		for i, tx := range block.Transactions {
-			cloned.Transactions[i] = cloneMempoolTransaction(tx)
-		}
-	}
-	return cloned
 }
 
 // fetchSyncJSON performs a bounded, read-only request with exactly one JSON response.

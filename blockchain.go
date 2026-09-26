@@ -123,8 +123,9 @@ func (bc *Blockchain) AddBlockValidated(block *Block) error {
 		return fmt.Errorf("invalid block")
 	}
 
-	bc.Blocks = append(bc.Blocks, block)
-	bc.updateUTXOSet(block.Transactions)
+	accepted := cloneBlock(block)
+	bc.Blocks = append(bc.Blocks, accepted)
+	bc.updateUTXOSet(accepted.Transactions)
 
 	return nil
 }

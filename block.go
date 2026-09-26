@@ -17,12 +17,12 @@ type Block struct {
 }
 
 func NewBlock(height uint64, transactions []Transaction, prevHash []byte) *Block {
-	block := &Block{
+	block := cloneBlock(&Block{
 		Height:       height,
 		Timestamp:    time.Now().Unix(),
 		Transactions: transactions,
 		PrevHash:     prevHash,
-	}
+	})
 
 	pow := NewProofOfWork(block)
 

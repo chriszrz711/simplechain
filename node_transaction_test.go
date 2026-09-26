@@ -78,7 +78,7 @@ func TestTransactionHandlerAcceptsAndDeduplicates(t *testing.T) {
 func TestTransactionHandlerRejectsBadRequests(t *testing.T) {
 	nodes, tx := transactionNodes(t, 1)
 	n := nodes[0]
-	invalid := cloneMempoolTransaction(*tx)
+	invalid := cloneTransaction(*tx)
 	invalid.Inputs[0].Signature = []byte("invalid")
 	badSignature, _ := json.Marshal(invalid)
 	coinbase, _ := json.Marshal(NewCoinbaseTransaction("Miner", CoinbaseReward))
